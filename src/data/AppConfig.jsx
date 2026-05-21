@@ -29,6 +29,12 @@ const defaultConfig = {
   // feature is gated on this being set. See `functions/index.js` for the
   // Firebase Function that fills this role.
   musicApiBaseUrl: '',
+  // Web-only: URL of the Google Drive videos proxy (lists a shared
+  // folder + streams bytes with Range support). Browsers can't list
+  // Drive folders without OAuth, so the Videos feature is gated on this.
+  // See `videos-proxy/README.md` for setup.
+  videosApiBaseUrl: '',
+  showVideosMenu: true,
 };
 
 const AppConfigContext = createContext(defaultConfig);

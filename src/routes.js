@@ -33,4 +33,7 @@ export const routes = {
   weather: '/weather',
   wifiLab: '/wifi-lab',
   community: '/community',
+  videos: '/videos',
+  videoEditor: (videoId) => `/videos/${encodeURIComponent(videoId)}`,
+  videoEditorPattern: '/videos/:videoId',
 };

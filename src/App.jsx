@@ -28,6 +28,8 @@ import { TvDetailScreen } from './features/movies/TvDetailScreen.jsx';
 import { TvPlayerScreen } from './features/movies/TvPlayerScreen.jsx';
 import { MusicScreen } from './features/music/MusicScreen.jsx';
 import { AudioTrimmerScreen } from './features/audio/AudioTrimmerScreen.jsx';
+import { VideosScreen } from './features/videos/VideosScreen.jsx';
+import { VideoEditorScreen } from './features/videos/VideoEditorScreen.jsx';
 import { FeatureStub } from './features/_stub/FeatureStub.jsx';
 
 export default function App() {
@@ -74,6 +76,8 @@ function AppRoutes() {
         <Route path={routes.ringtones} element={<RingtonesScreen />} />
         <Route path={routes.ringtoneFavorites} element={<RingtoneFavoritesScreen />} />
         <Route path={routes.audioTrimmer} element={<AudioTrimmerScreen />} />
+        <Route path={routes.videos} element={<VideosScreen />} />
+        <Route path={routes.videoEditorPattern} element={<VideoEditorScreen />} />
         <Route path={routes.wifiLab} element={<FeatureStub title="Wi-Fi Lab" androidOnly />} />
         <Route path={routes.community} element={<CommunityChannelScreen />} />
 

@@ -12,6 +12,7 @@ import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import ContentCutIcon from '@mui/icons-material/ContentCut';
 import WifiIcon from '@mui/icons-material/Wifi';
 import GroupsIcon from '@mui/icons-material/Groups';
+import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
 import { useAppConfig } from '../../data/AppConfig.jsx';
 import { useCurrentUser } from '../../data/UserSession.jsx';
 import { routes } from '../../routes.js';
@@ -27,6 +28,7 @@ const ALL_TILES = [
   { key: 'audio', title: 'Audio Trimmer', tagline: 'Cut & save', icon: ContentCutIcon, route: routes.audioTrimmer, accent: ['#FF7AB6', '#B85AC1'] },
   { key: 'wifi_lab', title: 'Wi-Fi Lab', tagline: 'Concept demo · educational', icon: WifiIcon, route: routes.wifiLab, accent: ['#00E5A8', '#004D40'] },
   { key: 'community', title: 'Community', tagline: 'Open channel · all members', icon: GroupsIcon, route: routes.community, accent: ['#FFC36B', '#B85AC1'] },
+  { key: 'videos', title: 'Videos', tagline: 'Edit & share from Drive', icon: VideoLibraryIcon, route: routes.videos, accent: ['#7AD0FF', '#0D47A1'] },
 ];
 
 export function HomeScreen() {
@@ -41,6 +43,7 @@ export function HomeScreen() {
         if (t.key === 'movies') return config.showMoviesMenu;
         if (t.key === 'wallpaper') return config.showWallpapersMenu;
         if (t.key === 'weather') return config.showWeatherMenu;
+        if (t.key === 'videos') return config.showVideosMenu;
         return true;
       }),
     [config]
