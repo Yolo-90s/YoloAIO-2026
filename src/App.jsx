@@ -12,6 +12,8 @@ import { SettingsScreen } from './features/settings/SettingsScreen.jsx';
 import { PrivacyScreen } from './features/settings/PrivacyScreen.jsx';
 import { ChatScreen } from './features/chat/ChatScreen.jsx';
 import { ChatConversationScreen } from './features/chat/ChatConversationScreen.jsx';
+import { UserProfileScreen } from './features/chat/UserProfileScreen.jsx';
+import { ChatNotificationsBoot } from './features/chat/ChatNotificationsBoot.jsx';
 import { CommunityChannelScreen } from './features/community/CommunityChannelScreen.jsx';
 import { WeatherScreen } from './features/weather/WeatherScreen.jsx';
 import { WallpaperScreen } from './features/wallpaper/WallpaperScreen.jsx';
@@ -54,7 +56,7 @@ function AppRoutes() {
       {/* All authed routes share the AppShell (TopBar + main area). The
           layout route also handles the auth guard once, instead of every
           leaf re-checking. */}
-      <Route element={<RequireAuth><AppShell /></RequireAuth>}>
+      <Route element={<RequireAuth><><ChatNotificationsBoot /><AppShell /></></RequireAuth>}>
         <Route path={routes.home} element={<HomeScreen />} />
         <Route path={routes.settings} element={<SettingsScreen />} />
         <Route path={routes.privacy} element={<PrivacyScreen />} />
@@ -67,6 +69,7 @@ function AppRoutes() {
         <Route path={routes.music} element={<MusicScreen />} />
         <Route path={routes.chat} element={<ChatScreen />} />
         <Route path={routes.chatConversationPattern} element={<ChatConversationScreen />} />
+        <Route path={routes.userProfilePattern} element={<UserProfileScreen />} />
         <Route path={routes.weather} element={<WeatherScreen />} />
         <Route path={routes.wallpaper} element={<WallpaperScreen />} />
         <Route path={routes.wallpaperFavorites} element={<WallpaperFavoritesScreen />} />

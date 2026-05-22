@@ -11,6 +11,8 @@ export const routes = {
   chat: '/chat',
   chatConversation: (userId) => `/chat/${encodeURIComponent(userId)}`,
   chatConversationPattern: '/chat/:userId',
+  userProfile: (userId) => `/user/${encodeURIComponent(userId)}`,
+  userProfilePattern: '/user/:userId',
   music: '/music',
   movies: '/movies',
   movieDetail: (movieId) => `/movies/${encodeURIComponent(movieId)}`,

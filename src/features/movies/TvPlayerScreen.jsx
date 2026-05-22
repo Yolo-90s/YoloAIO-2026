@@ -1,11 +1,30 @@
 import { useParams } from 'react-router-dom';
-import { Box } from '@mui/material';
+import { Box, CircularProgress, Stack } from '@mui/material';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { tvEmbedUrl } from './vidkingPlayer.js';
+import { useWatchProgress } from './useWatchProgress.js';
 
 export function TvPlayerScreen() {
   const { tvId, season, episode } = useParams();
-  const src = tvEmbedUrl({ tmdbId: tvId, season: Number(season), episode: Number(episode) });
+  const { initialSeconds } = useWatchProgress({ tmdbId: tvId, mediaType: 'tv' });
+
+  if (initialSeconds === null) {
+    return (
+      <FeatureScaffold title={`S${season} · E${episode}`}>
+        <Stack alignItems="center" sx={{ py: 8 }}>
+          <CircularProgress />
+        </Stack>
+      </FeatureScaffold>
+    );
+  }
+
+  const src = tvEmbedUrl({
+    tmdbId: tvId,
+    season: Number(season),
+    episode: Number(episode),
+    progressSeconds: initialSeconds || null,
+  });
+
   return (
     <FeatureScaffold title={`S${season} · E${episode}`}>
       <Box

@@ -84,19 +84,25 @@ export function observeMyQuotes(onChange) {
       }));
       emit();
     },
-    () => {
+    (err) => {
+      console.warn('[quotes] private listen error', err);
       priv = [];
       emit();
     }
   );
 
+  // No orderBy here: combining `where('ownerUid', '==', uid)` with
+  // `orderBy('createdAt', 'desc')` forces a composite index. Same fix as
+  // observePublicOwned() on the Android side — emit() sorts the merged
+  // list client-side anyway, so the orderBy was pure cost.
   const offPub = onSnapshot(
-    query(publicCol(), where('ownerUid', '==', me), orderBy('createdAt', 'desc')),
+    query(publicCol(), where('ownerUid', '==', me), limit(100)),
     (snap) => {
       pub = snap.docs.map((d) => docToQuote(d, VISIBILITY_PUBLIC));
       emit();
     },
-    () => {
+    (err) => {
+      console.warn('[quotes] public-owned listen error', err);
       pub = [];
       emit();
     }
@@ -120,7 +126,10 @@ export function observeCommunityQuotes(onChange) {
         .filter((q) => q.ownerUid !== me);
       onChange(quotes);
     },
-    () => onChange([])
+    (err) => {
+      console.warn('[quotes] community listen error', err);
+      onChange([]);
+    }
   );
 }
 

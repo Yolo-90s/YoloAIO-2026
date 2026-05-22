@@ -20,7 +20,12 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import GifIcon from '@mui/icons-material/Gif';
 import ImageIcon from '@mui/icons-material/Image';
+import CallIcon from '@mui/icons-material/Call';
+import VideocamIcon from '@mui/icons-material/Videocam';
 import { auth } from '../../data/firebase.js';
+import { useAppConfig } from '../../data/AppConfig.jsx';
+import { JitsiCallModal } from './JitsiCallModal.jsx';
+import { setActiveChatPartnerUid } from './chatNotifications.js';
 import { computeInitials, avatarColorToCss } from '../../data/userProfile.js';
 import {
   observeMessages,
@@ -55,6 +60,8 @@ export function ChatConversationScreen() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [emojiAnchor, setEmojiAnchor] = useState(null);
+  const [callOpen, setCallOpen] = useState(null); // null | 'audio' | 'video'
+  const config = useAppConfig();
   const imageInputRef = useRef(null);
   const gifInputRef = useRef(null);
   const listRef = useRef(null);
@@ -78,6 +85,14 @@ export function ChatConversationScreen() {
     if (!userId) return;
     const off = observeMessages(userId, setMessages);
     return off;
+  }, [userId]);
+
+  // Suppress chat notifications for the conversation the user is actively
+  // reading — matches Android's activeChatPartnerUid.
+  useEffect(() => {
+    if (!userId) return;
+    setActiveChatPartnerUid(userId);
+    return () => setActiveChatPartnerUid(null);
   }, [userId]);
 
   // Auto-scroll to the newest message. Run after the DOM updates so the
@@ -165,6 +180,9 @@ export function ChatConversationScreen() {
         onBack={() => navigate(routes.chat)}
         onDelete={() => setDeleteOpen(true)}
         deleting={deleting}
+        onAudioCall={() => setCallOpen('audio')}
+        onVideoCall={() => setCallOpen('video')}
+        onOpenProfile={() => navigate(routes.userProfile(other.uid))}
       />
 
       <Box
@@ -277,6 +295,14 @@ export function ChatConversationScreen() {
         </Box>
       </Popover>
 
+      <JitsiCallModal
+        open={callOpen !== null}
+        onClose={() => setCallOpen(null)}
+        otherUser={other}
+        video={callOpen === 'video'}
+        serverUrl={config.jitsiServerUrl}
+      />
+
       <Dialog open={deleteOpen} onClose={() => !deleting && setDeleteOpen(false)}>
         <DialogTitle sx={{ fontWeight: 600 }}>Delete chat?</DialogTitle>
         <DialogContent>
@@ -298,7 +324,7 @@ export function ChatConversationScreen() {
   );
 }
 
-function ConversationHeader({ user, onBack, onDelete, deleting }) {
+function ConversationHeader({ user, onBack, onDelete, deleting, onAudioCall, onVideoCall, onOpenProfile }) {
   const initials = user.initials || computeInitials(user.displayName || '');
   const avatarBg = avatarColorToCss(user.avatarColor);
   return (
@@ -321,33 +347,71 @@ function ConversationHeader({ user, onBack, onDelete, deleting }) {
         <ArrowBackIcon />
       </IconButton>
       <Box
+        onClick={onOpenProfile}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onOpenProfile?.();
+          }
+        }}
         sx={{
-          width: 40,
-          height: 40,
-          borderRadius: '50%',
-          background: avatarBg,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          fontWeight: 600,
-          flexShrink: 0,
+          gap: 1.5,
+          flex: 1,
+          minWidth: 0,
+          cursor: onOpenProfile ? 'pointer' : 'default',
+          borderRadius: 1,
+          px: 0.5,
+          mx: -0.5,
+          '&:hover': onOpenProfile ? { backgroundColor: 'rgba(255,255,255,0.04)' } : undefined,
         }}
       >
-        {initials}
-      </Box>
-      <Stack sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-          {user.displayName || 'Unknown'}
-        </Typography>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        <Box
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            background: avatarBg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            fontWeight: 600,
+            flexShrink: 0,
+          }}
         >
-          {user.email}
-        </Typography>
-      </Stack>
+          {initials}
+        </Box>
+        <Stack sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            {user.displayName || 'Unknown'}
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {user.email}
+          </Typography>
+        </Stack>
+      </Box>
+      <IconButton
+        onClick={onAudioCall}
+        sx={{ color: 'text.primary' }}
+        aria-label="Voice call"
+      >
+        <CallIcon />
+      </IconButton>
+      <IconButton
+        onClick={onVideoCall}
+        sx={{ color: 'text.primary' }}
+        aria-label="Video call"
+      >
+        <VideocamIcon />
+      </IconButton>
       <IconButton
         onClick={onDelete}
         disabled={deleting}

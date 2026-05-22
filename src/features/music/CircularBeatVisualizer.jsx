@@ -1,69 +1,127 @@
 import { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
-import { useFrequencyData } from './musicPlayer.js';
+import {
+  BANDS,
+  useBeatPulse,
+  useFrequencyData,
+} from './musicPlayer.js';
 
-// Radial FFT bars arranged around a circle. Each frequency bin becomes one
-// bar that grows outward from `innerRadius`. When the browser refuses to
-// expose live FFT data (cross-origin restriction on the audio source) we
-// fall back to a sine-wave animation so the visualisation never looks
-// frozen, even though it's no longer beat-accurate.
+// Radial visualizer.
+//
+// - Bins are sampled with a logarithmic mapping (human hearing is log,
+//   linear bars over-represent the high end and squash the bass).
+// - Per-bar peak-hold: fast attack, slow release. Looks fluid where
+//   raw FFT looks jittery.
+// - Whole ring breathes outward on each detected kick-drum onset via
+//   the shared spectral-flux pulse from musicPlayer.
+// - Canvas auto-fits its parent via ResizeObserver, so the visualizer
+//   stays centered no matter the container size.
 export function CircularBeatVisualizer({
-  size = 320,
-  innerRadius = 110,
-  bars = 56,
+  size = '100%',
+  bars = 64,
   color = '#FF66D4',
   glowColor = '#B829E5',
   active = true,
 }) {
+  const containerRef = useRef(null);
   const canvasRef = useRef(null);
+  const peaksRef = useRef(null);
   const freq = useFrequencyData();
+  const pulse = useBeatPulse();
 
   useEffect(() => {
+    const container = containerRef.current;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!container || !canvas) return;
     const ctx = canvas.getContext('2d');
     let raf = 0;
     const start = performance.now();
+    let cssSize = 0;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!peaksRef.current || peaksRef.current.length !== bars) {
+      peaksRef.current = new Float32Array(bars);
+    }
+
+    function applySize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const next = Math.min(container.clientWidth, container.clientHeight) || 0;
+      if (next === cssSize) return;
+      cssSize = next;
+      canvas.width = Math.round(cssSize * dpr);
+      canvas.height = Math.round(cssSize * dpr);
+      canvas.style.width = `${cssSize}px`;
+      canvas.style.height = `${cssSize}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    applySize();
+    const ro = new ResizeObserver(applySize);
+    ro.observe(container);
+
+    // Precompute log-spaced bin indices once. We span the full musical
+    // range — sub-bass through low treble — so the ring shows bass on
+    // one side and brightness on the other, with rhythm bins dominating.
+    const minBin = Math.max(1, BANDS.sub.start);
+    const maxBin = BANDS.highs.end;
+    const logMin = Math.log2(minBin);
+    const logMax = Math.log2(maxBin);
+    const binIndex = new Int32Array(bars);
+    for (let i = 0; i < bars; i++) {
+      const t = i / (bars - 1);
+      binIndex[i] = Math.floor(Math.pow(2, logMin + t * (logMax - logMin)));
+    }
 
     function draw(t) {
-      ctx.clearRect(0, 0, size, size);
-      const cx = size / 2;
-      const cy = size / 2;
+      if (cssSize === 0) {
+        raf = requestAnimationFrame(draw);
+        return;
+      }
+      ctx.clearRect(0, 0, cssSize, cssSize);
+      const cx = cssSize / 2;
+      const cy = cssSize / 2;
+      const innerRadius = cssSize * 0.34;
       const data = freq.get();
-      const maxBarLength = size / 2 - innerRadius - 6;
+      const beat = pulse.get();
+      // Kick pushes the whole ring outward (max ~6% of size).
+      const pulseRadius = beat * cssSize * 0.06;
+      const maxBarLength = cssSize / 2 - innerRadius - 4;
+      const peaks = peaksRef.current;
 
       ctx.lineCap = 'round';
-      ctx.lineWidth = Math.max(2, ((2 * Math.PI * innerRadius) / bars) * 0.55);
+      const barLineWidth = Math.max(2, ((2 * Math.PI * innerRadius) / bars) * 0.55);
 
       for (let i = 0; i < bars; i++) {
-        let value;
+        let raw;
         if (data && active) {
-          // The lower frequency bins carry most of the energy; bias the
-          // sampling so the bars don't all sit at zero on the top half.
-          const idx = Math.floor((i / bars) * (data.length * 0.85));
-          value = data[idx] / 255;
+          const idx = Math.min(data.length - 1, binIndex[i]);
+          raw = data[idx] / 255;
         } else if (active) {
-          value = (Math.sin((t - start) / 240 + i * 0.35) + 1) / 2 * 0.55 + 0.18;
+          raw = (Math.sin((t - start) / 240 + i * 0.35) + 1) / 2 * 0.45 + 0.12;
         } else {
-          value = 0.06;
+          raw = 0.04;
         }
-        const barLength = Math.max(4, value * maxBarLength);
-        // Start at -90deg (12 o'clock) so the highest energy stays visually
-        // anchored at the top of the disc.
-        const angle = (i / bars) * Math.PI * 2 - Math.PI / 2;
-        const x1 = cx + Math.cos(angle) * innerRadius;
-        const y1 = cy + Math.sin(angle) * innerRadius;
-        const x2 = cx + Math.cos(angle) * (innerRadius + barLength);
-        const y2 = cy + Math.sin(angle) * (innerRadius + barLength);
 
-        // Soft glow underlay → strong primary on top. Cheap on this many bars.
+        // Peak hold: fast attack (0.55), slow release (0.08). Bars rise
+        // immediately on transients and fall back smoothly between hits.
+        const prev = peaks[i];
+        if (raw > prev) {
+          peaks[i] = prev + (raw - prev) * 0.55;
+        } else {
+          peaks[i] = prev + (raw - prev) * 0.08;
+        }
+        const value = peaks[i];
+
+        const barLength = Math.max(3, value * maxBarLength) + pulseRadius;
+        // -PI/2 puts the lowest-frequency bar at 12 o'clock.
+        const angle = (i / bars) * Math.PI * 2 - Math.PI / 2;
+        const r0 = innerRadius + pulseRadius;
+        const x1 = cx + Math.cos(angle) * r0;
+        const y1 = cy + Math.sin(angle) * r0;
+        const x2 = cx + Math.cos(angle) * (r0 + barLength);
+        const y2 = cy + Math.sin(angle) * (r0 + barLength);
+
+        // Soft glow underlay → strong primary on top.
         ctx.strokeStyle = glowColor;
-        ctx.globalAlpha = 0.18 + value * 0.25;
+        ctx.globalAlpha = 0.16 + value * 0.28 + beat * 0.2;
         ctx.lineWidth = 6;
         ctx.beginPath();
         ctx.moveTo(x1, y1);
@@ -72,7 +130,7 @@ export function CircularBeatVisualizer({
 
         ctx.strokeStyle = color;
         ctx.globalAlpha = 0.85;
-        ctx.lineWidth = Math.max(2, ((2 * Math.PI * innerRadius) / bars) * 0.55);
+        ctx.lineWidth = barLineWidth;
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
@@ -82,14 +140,26 @@ export function CircularBeatVisualizer({
       raf = requestAnimationFrame(draw);
     }
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [size, innerRadius, bars, color, glowColor, active, freq]);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [bars, color, glowColor, active, freq, pulse]);
 
   return (
     <Box
-      component="canvas"
-      ref={canvasRef}
-      sx={{ width: size, height: size, display: 'block', pointerEvents: 'none' }}
-    />
+      ref={containerRef}
+      sx={{
+        position: 'relative',
+        width: size,
+        height: size,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+      }}
+    >
+      <Box component="canvas" ref={canvasRef} sx={{ display: 'block' }} />
+    </Box>
   );
 }

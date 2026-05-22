@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -26,6 +26,7 @@ import {
   ALIGN_END,
   ALIGN_START,
   BG_GRADIENT,
+  BG_IMAGE,
   BG_SOLID,
   VISIBILITY_PRIVATE,
   VISIBILITY_PUBLIC,
@@ -39,6 +40,8 @@ import {
 } from './presetQuotes.js';
 import { saveQuote } from './quoteRepository.js';
 import { usePrivacyPrefs } from '../settings/privacyPrefs.js';
+import { searchPhotos } from '../wallpaper/unsplashClient.js';
+import { useAppConfig, unsplashQuery } from '../../data/AppConfig.jsx';
 
 export function QuoteEditorScreen() {
   const navigate = useNavigate();
@@ -176,15 +179,36 @@ export function QuoteEditorScreen() {
           <ToggleButtonGroup
             value={style.backgroundType}
             exclusive
-            onChange={(_, v) => v && update({ backgroundType: v })}
+            onChange={(_, v) => {
+              if (!v) return;
+              if (v === BG_GRADIENT) {
+                update({
+                  backgroundType: BG_GRADIENT,
+                  backgroundColors:
+                    style.backgroundColors?.length >= 2
+                      ? style.backgroundColors
+                      : gradientPresets[0],
+                  backgroundImageUrl: null,
+                });
+              } else if (v === BG_SOLID) {
+                update({
+                  backgroundType: BG_SOLID,
+                  backgroundColors: [style.backgroundColors?.[0] ?? solidPresets[0]],
+                  backgroundImageUrl: null,
+                });
+              } else {
+                update({ backgroundType: BG_IMAGE });
+              }
+            }}
             size="small"
             fullWidth
           >
             <ToggleButton value={BG_GRADIENT}>Gradient</ToggleButton>
             <ToggleButton value={BG_SOLID}>Solid</ToggleButton>
+            <ToggleButton value={BG_IMAGE}>Image</ToggleButton>
           </ToggleButtonGroup>
 
-          {style.backgroundType === BG_GRADIENT ? (
+          {style.backgroundType === BG_GRADIENT && (
             <Box>
               <Typography variant="caption" color="text.secondary">
                 Gradient
@@ -209,7 +233,8 @@ export function QuoteEditorScreen() {
                 ))}
               </Stack>
             </Box>
-          ) : (
+          )}
+          {style.backgroundType === BG_SOLID && (
             <Box>
               <Typography variant="caption" color="text.secondary">
                 Color
@@ -225,6 +250,12 @@ export function QuoteEditorScreen() {
                 ))}
               </Stack>
             </Box>
+          )}
+          {style.backgroundType === BG_IMAGE && (
+            <BackgroundImagePicker
+              selectedUrl={style.backgroundImageUrl}
+              onPick={(url) => update({ backgroundImageUrl: url, backgroundType: BG_IMAGE })}
+            />
           )}
 
           <ToggleButtonGroup
@@ -257,5 +288,116 @@ function Swatch({ color, selected, onClick }) {
         outlineOffset: 2,
       }}
     />
+  );
+}
+
+function BackgroundImagePicker({ selectedUrl, onPick }) {
+  const config = useAppConfig();
+  const initial = unsplashQuery(config.wallpapersUrl);
+  const [query, setQuery] = useState(initial);
+  const [debounced, setDebounced] = useState(initial);
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(query.trim()), 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    if (!config.unsplashAccessKey) {
+      setError('Set unsplashAccessKey in Firestore config/app to browse images.');
+      return;
+    }
+    if (!debounced) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    searchPhotos({
+      query: debounced,
+      accessKey: config.unsplashAccessKey,
+      perPage: 20,
+      orientation: 'portrait',
+    })
+      .then((list) => {
+        if (!cancelled) setPhotos(list);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message || 'Failed to load images');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [debounced, config.unsplashAccessKey]);
+
+  return (
+    <Stack spacing={1}>
+      <Typography variant="caption" color="text.secondary">
+        Background image
+      </Typography>
+      <TextField
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search Unsplash"
+        size="small"
+        fullWidth
+      />
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+          <CircularProgress size={24} />
+        </Box>
+      )}
+      {!loading && error && (
+        <Typography variant="body2" color="error">
+          {error}
+        </Typography>
+      )}
+      {!loading && !error && photos.length === 0 && (
+        <Typography variant="body2" color="text.secondary">
+          No images yet — type a search above.
+        </Typography>
+      )}
+      {!loading && photos.length > 0 && (
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 1,
+            overflowX: 'auto',
+            pb: 1,
+            mx: -0.5,
+            px: 0.5,
+          }}
+        >
+          {photos.map((photo) => {
+            const isSelected = selectedUrl === photo.regularUrl;
+            return (
+              <Box
+                key={photo.id}
+                onClick={() => onPick(photo.regularUrl)}
+                sx={{
+                  flex: '0 0 auto',
+                  width: 80,
+                  height: 100,
+                  borderRadius: '10px',
+                  backgroundImage: `url(${photo.smallUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  cursor: 'pointer',
+                  outline: isSelected
+                    ? '3px solid #fff'
+                    : '1px solid rgba(255,255,255,0.3)',
+                  outlineOffset: -1,
+                }}
+                title={photo.description}
+              />
+            );
+          })}
+        </Box>
+      )}
+    </Stack>
   );
 }

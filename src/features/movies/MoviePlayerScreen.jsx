@@ -1,11 +1,30 @@
 import { useParams } from 'react-router-dom';
-import { Box } from '@mui/material';
+import { Box, CircularProgress, Stack } from '@mui/material';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { movieEmbedUrl } from './vidkingPlayer.js';
+import { useWatchProgress } from './useWatchProgress.js';
 
 export function MoviePlayerScreen() {
   const { movieId } = useParams();
-  const src = movieEmbedUrl({ tmdbId: movieId });
+  const { initialSeconds } = useWatchProgress({ tmdbId: movieId, mediaType: 'movie' });
+
+  // Wait for the saved position before mounting the iframe so vidking
+  // picks up the `progress=` query param and resumes from there.
+  if (initialSeconds === null) {
+    return (
+      <FeatureScaffold title="Now playing">
+        <Stack alignItems="center" sx={{ py: 8 }}>
+          <CircularProgress />
+        </Stack>
+      </FeatureScaffold>
+    );
+  }
+
+  const src = movieEmbedUrl({
+    tmdbId: movieId,
+    progressSeconds: initialSeconds || null,
+  });
+
   return (
     <FeatureScaffold title="Now playing">
       <Box

@@ -5,6 +5,10 @@ import {
   Chip,
   CircularProgress,
   IconButton,
+  Menu,
+  MenuItem,
+  Popover,
+  Radio,
   Slider,
   Stack,
   Tab,
@@ -21,6 +25,9 @@ import QueueMusicIcon from '@mui/icons-material/QueueMusic';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
+import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { SearchField } from '../../ui/SearchField.jsx';
 import { FilterButton } from '../../ui/FilterButton.jsx';
@@ -35,7 +42,18 @@ import {
   MusicProxyMissing,
 } from './jiosaavnClient.js';
 import { MUSIC_LANGUAGES, DEFAULT_LANGUAGE } from './musicLanguages.js';
-import { togglePlayPause, seekTo, usePlayer, playTrack } from './musicPlayer.js';
+import {
+  togglePlayPause,
+  seekTo,
+  usePlayer,
+  playTrack,
+  next as playerNext,
+  previous as playerPrevious,
+  cycleRepeatMode,
+  toggleShuffle,
+  addToPlayNext,
+  removeFromPlayNext,
+} from './musicPlayer.js';
 import { BeatVisualizer } from './BeatVisualizer.jsx';
 import { FullPlayer } from './FullPlayer.jsx';
 import {
@@ -43,6 +61,13 @@ import {
   addFavoriteTrack,
   removeFavoriteTrack,
 } from './favoriteTracksRepository.js';
+import {
+  MUSIC_QUALITIES,
+  setMusicQuality,
+  useMusicQuality,
+} from './musicQuality.js';
+import { CastButton } from './CastButton.jsx';
+import { subscribeCast } from './castManager.js';
 
 const LANG_KEY = 'yolo_music_prefs.selected_languages';
 
@@ -252,16 +277,20 @@ export function MusicScreen() {
           ) : undefined
         }
         actions={
-          <IconButton
-            onClick={() => {
-              setShowFavorites((v) => !v);
-              setSelected(null);
-            }}
-            sx={{ color: showFavorites ? 'primary.main' : 'text.secondary' }}
-            aria-label="Favorites"
-          >
-            {showFavorites ? <BookmarkIcon /> : <BookmarkBorderIcon />}
-          </IconButton>
+          <>
+            <CastButton />
+            <QualityPickerButton />
+            <IconButton
+              onClick={() => {
+                setShowFavorites((v) => !v);
+                setSelected(null);
+              }}
+              sx={{ color: showFavorites ? 'primary.main' : 'text.secondary' }}
+              aria-label="Favorites"
+            >
+              {showFavorites ? <BookmarkIcon /> : <BookmarkBorderIcon />}
+            </IconButton>
+          </>
         }
       >
         {selected ? (
@@ -272,7 +301,8 @@ export function MusicScreen() {
             isPlaying={player.isPlaying}
             isLoading={player.isLoading}
             favoriteIds={favoriteIds}
-            onToggle={togglePlayPause}
+            onToggle={(t, queue) => togglePlayPause(t, queue)}
+            onAddNext={addToPlayNext}
             onToggleFav={async (t) => {
               if (favoriteIds.has(t.id)) await removeFavoriteTrack(t.id);
               else await addFavoriteTrack(t);
@@ -309,7 +339,8 @@ export function MusicScreen() {
                   isPlaying={player.isPlaying}
                   isLoading={player.isLoading}
                   favoriteIds={favoriteIds}
-                  onToggle={togglePlayPause}
+                  onToggle={(t) => togglePlayPause(t, visibleSongs)}
+                  onAddNext={addToPlayNext}
                   onToggleFav={async (t) => {
                     if (favoriteIds.has(t.id)) await removeFavoriteTrack(t.id);
                     else await addFavoriteTrack(t);
@@ -326,7 +357,8 @@ export function MusicScreen() {
                 isPlaying={player.isPlaying}
                 isLoading={player.isLoading}
                 favoriteIds={favoriteIds}
-                onToggle={togglePlayPause}
+                onToggle={(t) => togglePlayPause(t, visibleSongs)}
+                onAddNext={addToPlayNext}
                 onToggleFav={async (t) => {
                   if (favoriteIds.has(t.id)) await removeFavoriteTrack(t.id);
                   else await addFavoriteTrack(t);
@@ -353,7 +385,7 @@ export function MusicScreen() {
         )}
       </FeatureScaffold>
 
-      {playingTrack && (
+      {playingTrack && !showFullPlayer && (
         <MiniPlayer
           track={playingTrack}
           isPlaying={player.isPlaying}
@@ -375,6 +407,11 @@ export function MusicScreen() {
         player={player}
         onToggle={() => playingTrack && togglePlayPause(playingTrack)}
         onSeek={seekTo}
+        onNext={playerNext}
+        onPrevious={playerPrevious}
+        onCycleRepeat={cycleRepeatMode}
+        onToggleShuffle={toggleShuffle}
+        onRemoveFromPlayNext={removeFromPlayNext}
         isFavorite={isCurrentFav}
         onToggleFavorite={
           playingTrack
@@ -554,6 +591,7 @@ function CollectionDetail({
   isLoading,
   favoriteIds,
   onToggle,
+  onAddNext,
   onToggleFav,
 }) {
   if (state.kind === 'loading') return <Centered><CircularProgress /></Centered>;
@@ -576,12 +614,12 @@ function CollectionDetail({
   const yearLabel = kind === 'album' && meta.year ? meta.year : null;
 
   const handlePlayAll = () => {
-    if (tracks.length > 0) playTrack(tracks[0]);
+    if (tracks.length > 0) playTrack(tracks[0], { queue: tracks });
   };
   const handleShuffle = () => {
     if (tracks.length > 0) {
       const idx = Math.floor(Math.random() * tracks.length);
-      playTrack(tracks[idx]);
+      playTrack(tracks[idx], { queue: tracks });
     }
   };
 
@@ -610,7 +648,8 @@ function CollectionDetail({
           isPlaying={isPlaying}
           isLoading={isLoading}
           favoriteIds={favoriteIds}
-          onToggle={onToggle}
+          onToggle={(t) => onToggle(t, tracks)}
+          onAddNext={onAddNext}
           onToggleFav={onToggleFav}
         />
       )}
@@ -770,6 +809,7 @@ function NumberedTrackList({
   isLoading,
   favoriteIds,
   onToggle,
+  onAddNext,
   onToggleFav,
 }) {
   return (
@@ -855,10 +895,114 @@ function NumberedTrackList({
             >
               {fav ? <BookmarkIcon /> : <BookmarkBorderIcon />}
             </IconButton>
+            {onAddNext && (
+              <Box onClick={(e) => e.stopPropagation()}>
+                <TrackMoreMenu track={track} onAddNext={onAddNext} />
+              </Box>
+            )}
           </Stack>
         );
       })}
     </Stack>
+  );
+}
+
+function QualityPickerButton() {
+  const [anchor, setAnchor] = useState(null);
+  const quality = useMusicQuality();
+  return (
+    <>
+      <IconButton
+        onClick={(e) => setAnchor(e.currentTarget)}
+        sx={{ color: 'text.secondary' }}
+        aria-label="Audio quality"
+      >
+        <GraphicEqIcon />
+      </IconButton>
+      <Popover
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Box sx={{ p: 1.5, minWidth: 240 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ px: 1, fontWeight: 600 }}>
+            Audio quality
+          </Typography>
+          <Stack sx={{ mt: 0.5 }}>
+            {MUSIC_QUALITIES.map((q) => {
+              const selected = quality === q.code;
+              return (
+                <Stack
+                  key={q.code}
+                  direction="row"
+                  alignItems="center"
+                  spacing={1}
+                  onClick={() => {
+                    setMusicQuality(q.code);
+                    setAnchor(null);
+                  }}
+                  sx={{
+                    px: 1,
+                    py: 1,
+                    cursor: 'pointer',
+                    borderRadius: '8px',
+                    '&:hover': { backgroundColor: 'rgba(255,255,255,0.05)' },
+                  }}
+                >
+                  <Radio checked={selected} size="small" />
+                  <Stack sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {q.label}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {q.description}
+                    </Typography>
+                  </Stack>
+                </Stack>
+              );
+            })}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1, mt: 0.5 }}>
+            Applies on the next track.
+          </Typography>
+        </Box>
+      </Popover>
+    </>
+  );
+}
+
+function TrackMoreMenu({ track, onAddNext }) {
+  const [anchor, setAnchor] = useState(null);
+  return (
+    <>
+      <IconButton
+        onClick={(e) => {
+          e.stopPropagation();
+          setAnchor(e.currentTarget);
+        }}
+        sx={{ color: 'text.secondary' }}
+        aria-label="Track menu"
+      >
+        <MoreVertIcon />
+      </IconButton>
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={() => setAnchor(null)}
+      >
+        <MenuItem
+          onClick={() => {
+            onAddNext(track);
+            setAnchor(null);
+          }}
+        >
+          <PlaylistPlayIcon fontSize="small" sx={{ mr: 1 }} />
+          Play next
+        </MenuItem>
+      </Menu>
+    </>
   );
 }
 
@@ -901,7 +1045,7 @@ function LanguageFilterPanel({ languages, onToggle, onClear }) {
 
 // ── Track list ────────────────────────────────────────────────────────────
 
-function TrackList({ tracks, playerTrackId, isPlaying, isLoading, favoriteIds, onToggle, onToggleFav }) {
+function TrackList({ tracks, playerTrackId, isPlaying, isLoading, favoriteIds, onToggle, onAddNext, onToggleFav }) {
   return (
     <Stack>
       {tracks.map((track) => {
@@ -957,6 +1101,7 @@ function TrackList({ tracks, playerTrackId, isPlaying, isLoading, favoriteIds, o
             <IconButton onClick={() => onToggleFav(track)} sx={{ color: fav ? 'primary.main' : 'text.secondary' }}>
               {fav ? <BookmarkIcon /> : <BookmarkBorderIcon />}
             </IconButton>
+            {onAddNext && <TrackMoreMenu track={track} onAddNext={onAddNext} />}
             <IconButton
               onClick={() => onToggle(track)}
               sx={{

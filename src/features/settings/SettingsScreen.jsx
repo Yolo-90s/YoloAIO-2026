@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -34,11 +34,39 @@ import { useYoloPalette } from '../../theme/ThemeProvider.jsx';
 import { palettes } from '../../theme/palettes.js';
 import { signOutUser, updateDisplayName, changePassword } from '../auth/authRepository.js';
 import { routes } from '../../routes.js';
+import {
+  getNotificationsEnabledPref,
+  isNotificationsSupported,
+  requestNotificationPermission,
+  setNotificationsEnabledPref,
+} from '../chat/chatNotifications.js';
 
 export function SettingsScreen() {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
-  const [notifications, setNotifications] = useState(true);
+  const [notifications, setNotificationsState] = useState(() => getNotificationsEnabledPref());
+
+  // Reflect a permission revoke that happens outside this tab.
+  useEffect(() => {
+    if (notifications && isNotificationsSupported() && Notification.permission !== 'granted') {
+      setNotificationsEnabledPref(false);
+      setNotificationsState(false);
+    }
+  }, [notifications]);
+
+  const setNotifications = async (next) => {
+    if (next) {
+      const perm = await requestNotificationPermission();
+      if (perm !== 'granted') {
+        setNotificationsEnabledPref(false);
+        setNotificationsState(false);
+        return;
+      }
+    }
+    setNotificationsEnabledPref(next);
+    setNotificationsState(next);
+    window.dispatchEvent(new Event('yolo:notif-pref-changed'));
+  };
   const [editProfile, setEditProfile] = useState(false);
   const [pwd, setPwd] = useState(false);
 

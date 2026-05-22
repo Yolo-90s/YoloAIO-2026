@@ -35,6 +35,8 @@ const defaultConfig = {
   // See `videos-proxy/README.md` for setup.
   videosApiBaseUrl: '',
   showVideosMenu: true,
+  // Optional custom Jitsi server. Falls back to meet.jit.si when empty.
+  jitsiServerUrl: '',
 };
 
 const AppConfigContext = createContext(defaultConfig);

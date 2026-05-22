@@ -5,6 +5,8 @@ import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import DownloadIcon from '@mui/icons-material/Download';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ShareIcon from '@mui/icons-material/Share';
+import { Snackbar } from '@mui/material';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { wallpaperCache } from './unsplashClient.js';
 import {
@@ -19,6 +21,7 @@ export function WallpaperDetailScreen() {
   const photo = wallpaperCache.byId(wallpaperId);
   const [fav, setFav] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     isFavorited(wallpaperId).then(setFav);
@@ -67,6 +70,46 @@ export function WallpaperDetailScreen() {
     a.rel = 'noopener noreferrer';
     a.download = `unsplash-${photo.id}.jpg`;
     a.click();
+  };
+
+  // Three-tier share: file via Web Share API (mobile), URL via Web Share
+  // API (desktop browsers that support it), or clipboard copy as last resort.
+  const handleShare = async () => {
+    const shareUrl = photo.fullUrl;
+    const title = photo.description || 'Wallpaper from Unsplash';
+    const text = `Wallpaper by ${photo.authorName} on Unsplash`;
+
+    if (typeof navigator.share === 'function') {
+      try {
+        // Try sharing the actual file first — only on platforms that allow it.
+        if (typeof navigator.canShare === 'function') {
+          try {
+            const res = await fetch(photo.regularUrl);
+            const blob = await res.blob();
+            const file = new File([blob], `unsplash-${photo.id}.jpg`, {
+              type: blob.type || 'image/jpeg',
+            });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({ title, text, files: [file] });
+              return;
+            }
+          } catch {
+            // Fall through to URL share.
+          }
+        }
+        await navigator.share({ title, text, url: shareUrl });
+        return;
+      } catch (e) {
+        if (e?.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setToast('Link copied to clipboard');
+    } catch {
+      setToast("Couldn't share — copy the URL manually");
+    }
   };
 
   return (
@@ -119,6 +162,14 @@ export function WallpaperDetailScreen() {
             </Button>
             <Button
               variant="outlined"
+              startIcon={<ShareIcon />}
+              onClick={handleShare}
+              sx={{ borderRadius: '14px' }}
+            >
+              Share
+            </Button>
+            <Button
+              variant="outlined"
               startIcon={<OpenInNewIcon />}
               href={photo.fullUrl}
               target="_blank"
@@ -130,6 +181,13 @@ export function WallpaperDetailScreen() {
           </Stack>
         </Stack>
       </Stack>
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={2500}
+        onClose={() => setToast(null)}
+        message={toast || ''}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </FeatureScaffold>
   );
 }

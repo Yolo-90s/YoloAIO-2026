@@ -1,13 +1,22 @@
 import { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
-import { useFrequencyData } from './musicPlayer.js';
+import {
+  BANDS,
+  useBeatPulse,
+  useFrequencyData,
+} from './musicPlayer.js';
 
-// Animated bars from the player's AnalyserNode. When the browser refuses
-// to expose FFT data (cross-origin restriction on the audio source) we
-// fall back to a sine-wave animation so the UI never sits visually dead.
+// Mini-player bar visualizer.
+//
+// - Logarithmic frequency mapping so bass bars don't all clump at the
+//   left edge.
+// - Peak-hold per bar (fast attack, slow release) for a fluid feel.
+// - Whole row lifts on the shared drum-onset pulse.
 export function BeatVisualizer({ height = 80, bars = 24, color = '#FF66D4', active = true }) {
   const canvasRef = useRef(null);
+  const peaksRef = useRef(null);
   const freq = useFrequencyData();
+  const pulse = useBeatPulse();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -15,6 +24,10 @@ export function BeatVisualizer({ height = 80, bars = 24, color = '#FF66D4', acti
     const ctx = canvas.getContext('2d');
     let raf = 0;
     const start = performance.now();
+
+    if (!peaksRef.current || peaksRef.current.length !== bars) {
+      peaksRef.current = new Float32Array(bars);
+    }
 
     function resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -27,23 +40,48 @@ export function BeatVisualizer({ height = 80, bars = 24, color = '#FF66D4', acti
     resize();
     window.addEventListener('resize', resize);
 
+    // Log-spaced bin indices, computed once.
+    const minBin = Math.max(1, BANDS.sub.start);
+    const maxBin = BANDS.highs.end;
+    const logMin = Math.log2(minBin);
+    const logMax = Math.log2(maxBin);
+    const binIndex = new Int32Array(bars);
+    for (let i = 0; i < bars; i++) {
+      const t = i / (bars - 1);
+      binIndex[i] = Math.floor(Math.pow(2, logMin + t * (logMax - logMin)));
+    }
+
     function draw(t) {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       ctx.clearRect(0, 0, w, h);
       const data = freq.get();
+      const beat = pulse.get();
+      const peaks = peaksRef.current;
       const gap = 3;
       const barWidth = (w - gap * (bars - 1)) / bars;
+
       for (let i = 0; i < bars; i++) {
-        let value;
+        let raw;
         if (data && active) {
-          const idx = Math.floor((i / bars) * data.length);
-          value = data[idx] / 255; // 0..1
+          const idx = Math.min(data.length - 1, binIndex[i]);
+          raw = data[idx] / 255;
         } else if (active) {
-          value = (Math.sin((t - start) / 200 + i * 0.3) + 1) / 2 * 0.55 + 0.15;
+          raw = (Math.sin((t - start) / 200 + i * 0.3) + 1) / 2 * 0.55 + 0.15;
         } else {
-          value = 0.05;
+          raw = 0.04;
         }
+
+        // Peak hold: fast rise, gentle fall.
+        const prev = peaks[i];
+        if (raw > prev) {
+          peaks[i] = prev + (raw - prev) * 0.55;
+        } else {
+          peaks[i] = prev + (raw - prev) * 0.08;
+        }
+
+        // Detected kick adds a uniform lift across the row.
+        const value = Math.min(1, peaks[i] + beat * 0.2);
         const barH = Math.max(2, value * h);
         const x = i * (barWidth + gap);
         const y = (h - barH) / 2;
@@ -60,7 +98,7 @@ export function BeatVisualizer({ height = 80, bars = 24, color = '#FF66D4', acti
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
     };
-  }, [active, bars, color, freq]);
+  }, [active, bars, color, freq, pulse]);
 
   return (
     <Box

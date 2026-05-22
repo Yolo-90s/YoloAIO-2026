@@ -6,14 +6,22 @@ import {
   IconButton,
   Slider,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import DownloadIcon from '@mui/icons-material/Download';
+import SaveIcon from '@mui/icons-material/Save';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { GlassCard } from '../../ui/GlassCard.jsx';
+import {
+  deleteTone,
+  saveTone,
+  subscribeTones,
+} from './trimmedTonesStore.js';
 
 // Mirror of AudioTrimmer.kt — pick an audio file, draw a waveform, drag
 // two handles to select a range, preview, and download as WAV.
@@ -34,6 +42,11 @@ export function AudioTrimmerScreen() {
   const [error, setError] = useState(null);
   const [range, setRange] = useState([0, 0]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [savedTones, setSavedTones] = useState([]);
+  const [saveName, setSaveName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => subscribeTones(setSavedTones), []);
 
   useEffect(() => {
     return () => {
@@ -103,19 +116,64 @@ export function AudioTrimmerScreen() {
     setIsPlaying(false);
   };
 
-  const handleSave = () => {
-    if (!buffer) return;
+  const buildTrimBlob = () => {
+    if (!buffer) return null;
     const [start, end] = range;
     const trimmed = sliceBuffer(buffer, start, end);
     const wav = encodeWav(trimmed);
-    const blob = new Blob([wav], { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
+    return {
+      blob: new Blob([wav], { type: 'audio/wav' }),
+      start,
+      end,
+      duration: Math.max(0, end - start),
+    };
+  };
+
+  const handleSave = () => {
+    const out = buildTrimBlob();
+    if (!out) return;
+    const url = URL.createObjectURL(out.blob);
     const a = document.createElement('a');
     a.href = url;
     const base = (fileName || 'trim').replace(/\.[^.]+$/, '');
-    a.download = `${base}-${Math.round(start * 1000)}-${Math.round(end * 1000)}.wav`;
+    a.download = `${base}-${Math.round(out.start * 1000)}-${Math.round(out.end * 1000)}.wav`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleSaveToLibrary = async () => {
+    const out = buildTrimBlob();
+    if (!out) return;
+    const fallback = (fileName || 'Clip').replace(/\.[^.]+$/, '');
+    const name = (saveName.trim() || fallback).slice(0, 80);
+    setSaving(true);
+    try {
+      await saveTone({
+        name,
+        sourceName: fileName,
+        blob: out.blob,
+        durationSec: out.duration,
+      });
+      setSaveName('');
+    } catch (e) {
+      setError(e.message || 'Could not save clip');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDownloadSaved = (tone) => {
+    const url = URL.createObjectURL(tone.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${tone.name}.wav`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handlePreviewSaved = (tone) => {
+    const a = new Audio(URL.createObjectURL(tone.blob));
+    a.play().catch(() => {});
   };
 
   return (
@@ -198,7 +256,7 @@ export function AudioTrimmerScreen() {
                 </Stack>
               </Box>
 
-              <Stack direction="row" spacing={1.5}>
+              <Stack direction="row" spacing={1.5} alignItems="center">
                 <IconButton
                   onClick={isPlaying ? stopPlayback : startPlayback}
                   sx={{
@@ -211,18 +269,35 @@ export function AudioTrimmerScreen() {
                 >
                   {isPlaying ? <StopIcon /> : <PlayArrowIcon />}
                 </IconButton>
-                <Box sx={{ flex: 1 }} />
+                <TextField
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                  placeholder="Name (optional)"
+                  size="small"
+                  sx={{ flex: 1 }}
+                />
+                <Button
+                  variant="outlined"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSaveToLibrary}
+                  disabled={saving}
+                  sx={{ borderRadius: '14px' }}
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </Button>
                 <Button
                   variant="contained"
                   startIcon={<DownloadIcon />}
                   onClick={handleSave}
                   sx={{ borderRadius: '14px' }}
                 >
-                  Save WAV
+                  WAV
                 </Button>
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                Browsers can't write a ringtone to your phone — save the WAV and copy it across, or convert to MP3 with any free tool first.
+                "Save" keeps the clip in your browser library below. "WAV" downloads it.
+                Browsers can't write a ringtone to your phone — copy the WAV across, or
+                convert to MP3 with any free tool first.
               </Typography>
             </>
           ) : (
@@ -234,8 +309,69 @@ export function AudioTrimmerScreen() {
           )}
         </Stack>
       </GlassCard>
+
+      {savedTones.length > 0 && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1.5, fontWeight: 700 }}>
+            Saved clips · {savedTones.length}
+          </Typography>
+          <Stack spacing={1} sx={{ mt: 1 }}>
+            {savedTones.map((tone) => (
+              <SavedToneRow
+                key={tone.id}
+                tone={tone}
+                onPreview={() => handlePreviewSaved(tone)}
+                onDownload={() => handleDownloadSaved(tone)}
+                onDelete={() => deleteTone(tone.id)}
+              />
+            ))}
+          </Stack>
+        </Box>
+      )}
     </FeatureScaffold>
   );
+}
+
+function SavedToneRow({ tone, onPreview, onDownload, onDelete }) {
+  return (
+    <GlassCard contentPadding={1.5}>
+      <Stack direction="row" alignItems="center" spacing={1.5}>
+        <IconButton
+          onClick={onPreview}
+          sx={{
+            width: 40,
+            height: 40,
+            backgroundColor: 'primary.main',
+            color: 'primary.contrastText',
+            '&:hover': { backgroundColor: 'primary.dark' },
+          }}
+        >
+          <PlayArrowIcon />
+        </IconButton>
+        <Stack sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {tone.name}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {formatTime(tone.durationSec)} · {formatBytes(tone.sizeBytes)} · {new Date(tone.createdAt).toLocaleDateString()}
+          </Typography>
+        </Stack>
+        <IconButton onClick={onDownload} sx={{ color: 'text.secondary' }} aria-label="Download">
+          <DownloadIcon />
+        </IconButton>
+        <IconButton onClick={onDelete} sx={{ color: 'error.main' }} aria-label="Delete">
+          <DeleteOutlineIcon />
+        </IconButton>
+      </Stack>
+    </GlassCard>
+  );
+}
+
+function formatBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // ── Waveform drawing ─────────────────────────────────────────────────────
