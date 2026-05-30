@@ -6,6 +6,11 @@ import {
   loadAudioOnCast,
   subscribeCast,
 } from "./castManager.js";
+import { MusicEffects } from "./musicEffects.js";
+import {
+  getMusicEffects,
+  subscribeEffects,
+} from "./musicEffectsPreferences.js";
 
 // Single-track audio player shared across the Music screen + mini player.
 // Lives as a module-level singleton so the same <audio> survives route
@@ -24,6 +29,8 @@ let audio = null;
 let audioContext = null;
 let analyser = null;
 let mediaSource = null;
+let effects = null;
+let effectsUnsub = null;
 const subscribers = new Set();
 let state = {
   track: null,
@@ -78,8 +85,21 @@ function ensureAnalyser() {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.6;
     mediaSource = audioContext.createMediaElementSource(ensureAudio());
-    mediaSource.connect(analyser);
+    // Audio graph:
+    //   mediaSource → effects (EQ + bass + virtualizer + loudness)
+    //               → analyser (visualizer reads the processed signal)
+    //               → destination (speakers)
+    // We always insert the effects chain even when disabled — the chain
+    // passes audio through transparently when settings are at "Flat",
+    // and physically rebuilding the graph mid-playback would click.
+    effects = new MusicEffects(audioContext);
+    mediaSource.connect(effects.input);
+    effects.output.connect(analyser);
     analyser.connect(audioContext.destination);
+    // Apply saved settings + subscribe so changes in Settings re-apply
+    // in real time.
+    effects.apply(getMusicEffects());
+    effectsUnsub = subscribeEffects((s) => effects.apply(s));
   } catch (e) {
     analyser = null;
   }

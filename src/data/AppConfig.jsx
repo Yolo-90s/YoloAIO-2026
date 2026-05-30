@@ -37,6 +37,13 @@ const defaultConfig = {
   showVideosMenu: true,
   // Optional custom Jitsi server. Falls back to meet.jit.si when empty.
   jitsiServerUrl: '',
+  showBooksMenu: true,
+  showBeatAnalyserMenu: true,
+  // Cloud Function endpoint for the Gutenberg book proxy. Browsers
+  // can't fetch gutenberg.org directly (no CORS, anti-bot UA gate),
+  // so the Books reader hits this proxy and forwards the URL.
+  // See functions/index.js → bookProxy.
+  booksApiBaseUrl: '',
 };
 
 const AppConfigContext = createContext(defaultConfig);

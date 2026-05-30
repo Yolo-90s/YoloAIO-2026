@@ -4,6 +4,7 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Drawer,
   IconButton,
   Menu,
   MenuItem,
@@ -11,6 +12,7 @@ import {
   Radio,
   Slider,
   Stack,
+  Switch,
   Tab,
   Tabs,
   Typography,
@@ -28,6 +30,21 @@ import CloudOffIcon from '@mui/icons-material/CloudOff';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
+import TuneIcon from '@mui/icons-material/Tune';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import {
+  EQ_PRESETS,
+} from './musicEffects.js';
+import {
+  useMusicEffects,
+  setEffectsEnabled,
+  setEffectsPreset,
+  setEffectsBass,
+  setEffectsVirtualizer,
+  setEffectsLoudness,
+  applyEnhanced,
+  resetEffects,
+} from './musicEffectsPreferences.js';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { SearchField } from '../../ui/SearchField.jsx';
 import { FilterButton } from '../../ui/FilterButton.jsx';
@@ -279,6 +296,7 @@ export function MusicScreen() {
         actions={
           <>
             <CastButton />
+            <EnhancementsButton />
             <QualityPickerButton />
             <IconButton
               onClick={() => {
@@ -904,6 +922,160 @@ function NumberedTrackList({
         );
       })}
     </Stack>
+  );
+}
+
+function EnhancementsButton() {
+  const [open, setOpen] = useState(false);
+  const settings = useMusicEffects();
+  return (
+    <>
+      <IconButton
+        onClick={() => setOpen(true)}
+        sx={{ color: settings.enabled ? 'primary.main' : 'text.secondary' }}
+        aria-label="Audio enhancements"
+        title="Audio enhancements"
+      >
+        <TuneIcon />
+      </IconButton>
+      <Drawer
+        anchor="bottom"
+        open={open}
+        onClose={() => setOpen(false)}
+        slotProps={{
+          paper: {
+            sx: {
+              backgroundColor: 'rgba(20,14,32,0.96)',
+              backdropFilter: 'blur(20px)',
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              maxHeight: '85vh',
+            },
+          },
+        }}
+      >
+        <Box sx={{ p: 2.5, maxWidth: 640, mx: 'auto', width: '100%' }}>
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '12px',
+                backgroundColor: 'primary.main',
+                opacity: 0.18,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+              }}
+            >
+              <GraphicEqIcon sx={{ color: 'primary.main', position: 'absolute' }} />
+            </Box>
+            <Stack sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                Audio enhancements
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                EQ + bass + virtualizer + loudness. Best with headphones.
+              </Typography>
+            </Stack>
+            <Switch
+              checked={settings.enabled}
+              onChange={(_, on) => setEffectsEnabled(on)}
+            />
+          </Stack>
+
+          <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<AutoAwesomeIcon />}
+              onClick={applyEnhanced}
+              sx={{ flex: 1 }}
+            >
+              Quick enhance
+            </Button>
+            <Button
+              size="small"
+              variant="text"
+              onClick={resetEffects}
+              sx={{ flex: 1 }}
+            >
+              Reset to flat
+            </Button>
+          </Stack>
+
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 2, fontWeight: 600, letterSpacing: 0.5 }}
+          >
+            EQ preset
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.5 }}>
+            {EQ_PRESETS.map((p) => (
+              <Chip
+                key={p.name}
+                label={p.label}
+                size="small"
+                disabled={!settings.enabled}
+                onClick={() => setEffectsPreset(p.name)}
+                color={settings.enabled && settings.preset === p.name ? 'primary' : 'default'}
+                variant={settings.enabled && settings.preset === p.name ? 'filled' : 'outlined'}
+              />
+            ))}
+          </Box>
+
+          <EffectSlider
+            label="Bass boost"
+            value={settings.bassStrength}
+            onChange={setEffectsBass}
+            enabled={settings.enabled}
+            hint="Adds low-end punch. ~40-60% sounds best on phone speakers."
+          />
+          <EffectSlider
+            label="Stereo virtualizer"
+            value={settings.virtualizerStrength}
+            onChange={setEffectsVirtualizer}
+            enabled={settings.enabled}
+            hint="Widens the stereo image. Best with headphones."
+          />
+          <EffectSlider
+            label="Loudness gain"
+            value={settings.loudnessGain}
+            onChange={setEffectsLoudness}
+            enabled={settings.enabled}
+            hint="Boosts overall volume. Above ~50% may clip on hot tracks."
+          />
+        </Box>
+      </Drawer>
+    </>
+  );
+}
+
+function EffectSlider({ label, value, onChange, enabled, hint }) {
+  return (
+    <Box sx={{ mt: 2, opacity: enabled ? 1 : 0.5 }}>
+      <Stack direction="row" alignItems="center">
+        <Typography variant="body2" sx={{ fontWeight: 500, flex: 1 }}>
+          {label}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+          {value}%
+        </Typography>
+      </Stack>
+      <Slider
+        value={value}
+        min={0}
+        max={100}
+        size="small"
+        disabled={!enabled}
+        onChange={(_, v) => onChange(v)}
+      />
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+        {hint}
+      </Typography>
+    </Box>
   );
 }
 

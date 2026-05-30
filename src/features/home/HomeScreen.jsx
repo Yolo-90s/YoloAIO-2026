@@ -13,6 +13,8 @@ import ContentCutIcon from '@mui/icons-material/ContentCut';
 import WifiIcon from '@mui/icons-material/Wifi';
 import GroupsIcon from '@mui/icons-material/Groups';
 import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
+import EqualizerIcon from '@mui/icons-material/Equalizer';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import { useAppConfig } from '../../data/AppConfig.jsx';
 import { useCurrentUser } from '../../data/UserSession.jsx';
 import { routes } from '../../routes.js';
@@ -29,6 +31,8 @@ const ALL_TILES = [
   { key: 'wifi_lab', title: 'Wi-Fi Lab', tagline: 'Concept demo · educational', icon: WifiIcon, route: routes.wifiLab, accent: ['#00E5A8', '#004D40'] },
   { key: 'community', title: 'Community', tagline: 'Open channel · all members', icon: GroupsIcon, route: routes.community, accent: ['#FFC36B', '#B85AC1'] },
   { key: 'videos', title: 'Videos', tagline: 'Edit & share from Drive', icon: VideoLibraryIcon, route: routes.videos, accent: ['#7AD0FF', '#0D47A1'] },
+  { key: 'books', title: 'Books', tagline: 'Free classics · read anywhere', icon: MenuBookIcon, route: routes.books, accent: ['#FFB088', '#5D4037'] },
+  { key: 'beat_analyser', title: 'Beat Analyser', tagline: 'Noise meter · disco lights', icon: EqualizerIcon, route: routes.beatAnalyser, accent: ['#42E6B4', '#311B92'] },
 ];
 
 export function HomeScreen() {
@@ -44,6 +48,8 @@ export function HomeScreen() {
         if (t.key === 'wallpaper') return config.showWallpapersMenu;
         if (t.key === 'weather') return config.showWeatherMenu;
         if (t.key === 'videos') return config.showVideosMenu;
+        if (t.key === 'books') return config.showBooksMenu;
+        if (t.key === 'beat_analyser') return config.showBeatAnalyserMenu;
         return true;
       }),
     [config]
