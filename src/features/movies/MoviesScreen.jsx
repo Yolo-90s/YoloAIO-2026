@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useInfinitePagination } from '../../ui/useInfinitePagination.js';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -36,7 +37,6 @@ export function MoviesScreen() {
   const [category, setCategory] = useState('popular');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [state, setState] = useState({ kind: 'loading' });
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -44,37 +44,54 @@ export function MoviesScreen() {
     return () => clearTimeout(t);
   }, [query]);
 
+  // Per-page TMDB fetch — closed over the current media/category/query
+  // via useCallback so the hook re-runs whenever those change.
+  const fetchTmdbPage = useCallback(
+    async (page) => {
+      // enabled: Boolean(auth) below ensures we never call this without
+      // a valid TMDB key, so an explicit null-check would be unreachable.
+      if (debouncedQuery) return TMDB.search(media, debouncedQuery, auth, page);
+      if (category === 'popular') return TMDB.popular(media, auth, page);
+      if (category === 'top_rated') return TMDB.topRated(media, auth, page);
+      return TMDB.trending(media, auth, page);
+    },
+    [auth, media, category, debouncedQuery]
+  );
+
+  // Cache-bust the pager whenever the user changes media/category/query
+  // OR taps Retry. Including reload in the key resets pagination.
+  const depsKey = `${media}|${category}|${debouncedQuery}|${reload}`;
+
+  const {
+    items: titles,
+    loading,
+    loadingMore,
+    error,
+    done,
+    sentinelRef,
+  } = useInfinitePagination({
+    fetchPage: fetchTmdbPage,
+    depsKey,
+    keyOf: (t) => `${t.mediaType}-${t.id}`,
+    pageSize: 20, // TMDb returns 20 results per page
+    enabled: Boolean(auth),
+  });
+
+  // Keep the in-memory cache fed so detail screens can pick up titles
+  // without a re-fetch.
   useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!auth) {
-        setState({ kind: 'missingKey' });
-        return;
-      }
-      setState({ kind: 'loading' });
-      try {
-        let titles;
-        if (debouncedQuery) {
-          titles = await TMDB.search(media, debouncedQuery, auth);
-        } else if (category === 'popular') {
-          titles = await TMDB.popular(media, auth);
-        } else if (category === 'top_rated') {
-          titles = await TMDB.topRated(media, auth);
-        } else {
-          titles = await TMDB.trending(media, auth);
-        }
-        if (cancelled) return;
-        tmdbCache.setList(titles);
-        setState({ kind: 'ready', titles });
-      } catch (e) {
-        if (!cancelled) setState({ kind: 'error', message: e.message });
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [media, category, debouncedQuery, auth, reload]);
+    if (titles.length > 0) tmdbCache.setList(titles);
+  }, [titles]);
+
+  // Build the state-machine shape the rest of the JSX already
+  // understands. Keeps the render branches identical to before.
+  const state = !auth
+    ? { kind: 'missingKey' }
+    : loading
+    ? { kind: 'loading' }
+    : error
+    ? { kind: 'error', message: error }
+    : { kind: 'ready', titles };
 
   // The Movies/TV toggle is a primary mode switch (it changes what's even
   // *possible* to show), so it stays prominent under the header. Category
@@ -126,23 +143,41 @@ export function MoviesScreen() {
           message={debouncedQuery ? `Nothing matches "${debouncedQuery}"` : "Couldn't find anything in this list."}
         />
       ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(min(160px, 100%), 1fr))',
-            gap: 2,
-          }}
-        >
-          {state.titles.map((t) => (
-            <PosterTile
-              key={`${t.mediaType}-${t.id}`}
-              title={t}
-              onClick={() =>
-                navigate(t.mediaType === 'tv' ? routes.tvDetail(t.id) : routes.movieDetail(t.id))
-              }
-            />
-          ))}
-        </Box>
+        <>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(min(160px, 100%), 1fr))',
+              gap: 2,
+            }}
+          >
+            {state.titles.map((t) => (
+              <PosterTile
+                key={`${t.mediaType}-${t.id}`}
+                title={t}
+                onClick={() =>
+                  navigate(t.mediaType === 'tv' ? routes.tvDetail(t.id) : routes.movieDetail(t.id))
+                }
+              />
+            ))}
+          </Box>
+          {/* Sentinel — when this box scrolls into view the hook fetches the
+              next page. The 320px rootMargin in useInfinitePagination means
+              loading starts before the user hits the bottom. */}
+          <Box ref={sentinelRef} sx={{ height: 1 }} />
+          {loadingMore && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress size={28} />
+            </Box>
+          )}
+          {done && state.titles.length > 0 && (
+            <Box sx={{ textAlign: 'center', py: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                You've reached the end · {state.titles.length} titles
+              </Typography>
+            </Box>
+          )}
+        </>
       )}
     </FeatureScaffold>
   );

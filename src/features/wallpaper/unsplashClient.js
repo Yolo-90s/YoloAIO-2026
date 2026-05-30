@@ -24,11 +24,17 @@ export function resolutionAccepts(filter, photo) {
   return true;
 }
 
-export async function searchPhotos({ query, accessKey, perPage = 30, orientation = 'portrait' }) {
+export async function searchPhotos({
+  query,
+  accessKey,
+  perPage = 30,
+  orientation = 'portrait',
+  page = 1,
+}) {
   if (!accessKey) throw new Error('Missing Unsplash access key');
   const q = encodeURIComponent(query?.trim() || 'nature');
   const orientationParam = orientation && orientation !== 'any' ? `&orientation=${orientation}` : '';
-  const url = `${BASE}/search/photos?query=${q}&per_page=${perPage}${orientationParam}`;
+  const url = `${BASE}/search/photos?query=${q}&per_page=${perPage}&page=${page}${orientationParam}`;
   const res = await fetch(url, {
     headers: {
       Authorization: `Client-ID ${accessKey}`,

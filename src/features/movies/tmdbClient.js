@@ -68,8 +68,8 @@ export const TMDB = {
   topRated(media, auth, page = 1) {
     return getList(`/${media}/top_rated`, { page, language: 'en-US' }, auth, media);
   },
-  trending(media, auth, window = 'week') {
-    return getList(`/trending/${media}/${window}`, { language: 'en-US' }, auth, media);
+  trending(media, auth, page = 1, window = 'week') {
+    return getList(`/trending/${media}/${window}`, { page, language: 'en-US' }, auth, media);
   },
   async search(media, query, auth, page = 1) {
     if (!query?.trim()) return [];

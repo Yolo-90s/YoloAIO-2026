@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useInfinitePagination } from '../../ui/useInfinitePagination.js';
 import {
   Box,
   Button,
@@ -110,10 +111,8 @@ export function MusicScreen() {
   const [showFullPlayer, setShowFullPlayer] = useState(false);
   const [reload, setReload] = useState(0);
 
-  // Per-tab fetch state.
-  const [songsState, setSongsState] = useState({ kind: 'loading' });
-  const [albumsState, setAlbumsState] = useState({ kind: 'loading' });
-  const [playlistsState, setPlaylistsState] = useState({ kind: 'loading' });
+  // Per-tab fetch state — derived below from three paginators so the
+  // existing render logic (`*.kind === 'ready'`) keeps working.
 
   // When an album or playlist is opened, we render that detail view
   // instead of the grid. Clearing this returns to the grid.
@@ -133,68 +132,71 @@ export function MusicScreen() {
 
   const primaryLang = languages[0] ?? DEFAULT_LANGUAGE.code;
 
-  // Songs tab fetch
-  useEffect(() => {
-    if (tab !== 'songs') return;
-    let cancelled = false;
-    async function run() {
-      if (!baseUrl) {
-        setSongsState({ kind: 'missingProxy' });
-        return;
-      }
-      setSongsState({ kind: 'loading' });
-      try {
-        const tracks = await searchSongs({ baseUrl, query: debouncedQuery, languageCode: primaryLang });
-        if (!cancelled) setSongsState({ kind: 'ready', tracks });
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof MusicProxyMissing) setSongsState({ kind: 'missingProxy' });
-        else setSongsState({ kind: 'error', message: e.message });
-      }
-    }
-    run();
-    return () => { cancelled = true; };
-  }, [tab, baseUrl, debouncedQuery, primaryLang, reload]);
+  // Three infinite-scroll paginators, one per tab. Each is gated by
+  // `enabled = tab === '<this>'` so only the active tab fetches — the
+  // hook resets when the user changes search query / language /
+  // baseUrl / Retry but NOT when the user just switches tab, so each
+  // tab preserves its accumulated list and scroll position.
+  const fetchSongsPage = useCallback(
+    (page) => searchSongs({ baseUrl, query: debouncedQuery, languageCode: primaryLang, page }),
+    [baseUrl, debouncedQuery, primaryLang]
+  );
+  const songsPager = useInfinitePagination({
+    fetchPage: fetchSongsPage,
+    depsKey: `songs|${baseUrl}|${debouncedQuery}|${primaryLang}|${reload}`,
+    keyOf: (t) => t.id,
+    pageSize: 30,
+    enabled: Boolean(baseUrl) && tab === 'songs' && !showFavorites,
+  });
 
-  // Albums tab fetch
-  useEffect(() => {
-    if (tab !== 'albums') return;
-    let cancelled = false;
-    async function run() {
-      if (!baseUrl) { setAlbumsState({ kind: 'missingProxy' }); return; }
-      setAlbumsState({ kind: 'loading' });
-      try {
-        const items = await searchAlbums({ baseUrl, query: debouncedQuery });
-        if (!cancelled) setAlbumsState({ kind: 'ready', items });
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof MusicProxyMissing) setAlbumsState({ kind: 'missingProxy' });
-        else setAlbumsState({ kind: 'error', message: e.message });
-      }
-    }
-    run();
-    return () => { cancelled = true; };
-  }, [tab, baseUrl, debouncedQuery, reload]);
+  const fetchAlbumsPage = useCallback(
+    (page) => searchAlbums({ baseUrl, query: debouncedQuery, page }),
+    [baseUrl, debouncedQuery]
+  );
+  const albumsPager = useInfinitePagination({
+    fetchPage: fetchAlbumsPage,
+    depsKey: `albums|${baseUrl}|${debouncedQuery}|${reload}`,
+    keyOf: (a) => a.id,
+    pageSize: 24,
+    enabled: Boolean(baseUrl) && tab === 'albums' && !showFavorites,
+  });
 
-  // Playlists tab fetch
-  useEffect(() => {
-    if (tab !== 'playlists') return;
-    let cancelled = false;
-    async function run() {
-      if (!baseUrl) { setPlaylistsState({ kind: 'missingProxy' }); return; }
-      setPlaylistsState({ kind: 'loading' });
-      try {
-        const items = await searchPlaylists({ baseUrl, query: debouncedQuery });
-        if (!cancelled) setPlaylistsState({ kind: 'ready', items });
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof MusicProxyMissing) setPlaylistsState({ kind: 'missingProxy' });
-        else setPlaylistsState({ kind: 'error', message: e.message });
-      }
-    }
-    run();
-    return () => { cancelled = true; };
-  }, [tab, baseUrl, debouncedQuery, reload]);
+  const fetchPlaylistsPage = useCallback(
+    (page) => searchPlaylists({ baseUrl, query: debouncedQuery, page }),
+    [baseUrl, debouncedQuery]
+  );
+  const playlistsPager = useInfinitePagination({
+    fetchPage: fetchPlaylistsPage,
+    depsKey: `playlists|${baseUrl}|${debouncedQuery}|${reload}`,
+    keyOf: (p) => p.id,
+    pageSize: 24,
+    enabled: Boolean(baseUrl) && tab === 'playlists' && !showFavorites,
+  });
+
+  // Rebuild the state-machine shape (`{kind: 'loading'|'ready'|...}`)
+  // that the existing JSX downstream still expects. Lets the
+  // pagination refactor stay surgical.
+  const songsState = !baseUrl
+    ? { kind: 'missingProxy' }
+    : songsPager.loading
+    ? { kind: 'loading' }
+    : songsPager.error
+    ? { kind: 'error', message: songsPager.error }
+    : { kind: 'ready', tracks: songsPager.items };
+  const albumsState = !baseUrl
+    ? { kind: 'missingProxy' }
+    : albumsPager.loading
+    ? { kind: 'loading' }
+    : albumsPager.error
+    ? { kind: 'error', message: albumsPager.error }
+    : { kind: 'ready', items: albumsPager.items };
+  const playlistsState = !baseUrl
+    ? { kind: 'missingProxy' }
+    : playlistsPager.loading
+    ? { kind: 'loading' }
+    : playlistsPager.error
+    ? { kind: 'error', message: playlistsPager.error }
+    : { kind: 'ready', items: playlistsPager.items };
 
   // Selected album / playlist detail fetch
   useEffect(() => {
@@ -381,6 +383,9 @@ export function MusicScreen() {
                   if (favoriteIds.has(t.id)) await removeFavoriteTrack(t.id);
                   else await addFavoriteTrack(t);
                 }}
+                sentinelRef={songsPager.sentinelRef}
+                loadingMore={songsPager.loadingMore}
+                done={songsPager.done}
               />
             ) : tab === 'albums' ? (
               <CollectionGrid
@@ -389,6 +394,9 @@ export function MusicScreen() {
                 emptyMessage={debouncedQuery ? `No albums for "${debouncedQuery}"` : 'No albums found'}
                 onSelect={(item) => setSelected({ kind: 'album', id: item.id })}
                 onRetry={() => setReload((k) => k + 1)}
+                sentinelRef={albumsPager.sentinelRef}
+                loadingMore={albumsPager.loadingMore}
+                done={albumsPager.done}
               />
             ) : (
               <CollectionGrid
@@ -397,6 +405,9 @@ export function MusicScreen() {
                 emptyMessage={debouncedQuery ? `No playlists for "${debouncedQuery}"` : 'No playlists found'}
                 onSelect={(item) => setSelected({ kind: 'playlist', id: item.id })}
                 onRetry={() => setReload((k) => k + 1)}
+                sentinelRef={playlistsPager.sentinelRef}
+                loadingMore={playlistsPager.loadingMore}
+                done={playlistsPager.done}
               />
             )}
           </>
@@ -462,7 +473,11 @@ function SongsTabBody({
   isLoading,
   favoriteIds,
   onToggle,
+  onAddNext,
   onToggleFav,
+  sentinelRef,
+  loadingMore,
+  done,
 }) {
   if (state.kind === 'loading') return <Centered><CircularProgress /></Centered>;
   if (state.kind === 'missingProxy') return <ProxyMissingPanel />;
@@ -487,21 +502,46 @@ function SongsTabBody({
     );
   }
   return (
-    <TrackList
-      tracks={visibleTracks}
-      playerTrackId={playerTrackId}
-      isPlaying={isPlaying}
-      isLoading={isLoading}
-      favoriteIds={favoriteIds}
-      onToggle={onToggle}
-      onToggleFav={onToggleFav}
-    />
+    <>
+      <TrackList
+        tracks={visibleTracks}
+        playerTrackId={playerTrackId}
+        isPlaying={isPlaying}
+        isLoading={isLoading}
+        favoriteIds={favoriteIds}
+        onToggle={onToggle}
+        onAddNext={onAddNext}
+        onToggleFav={onToggleFav}
+      />
+      <Box ref={sentinelRef} sx={{ height: 1 }} />
+      {loadingMore && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+          <CircularProgress size={24} />
+        </Box>
+      )}
+      {done && (
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Typography variant="caption" color="text.secondary">
+            You've reached the end · {visibleTracks.length} songs
+          </Typography>
+        </Box>
+      )}
+    </>
   );
 }
 
 // ── Album / Playlist grid ─────────────────────────────────────────────────
 
-function CollectionGrid({ state, kind, emptyMessage, onSelect, onRetry }) {
+function CollectionGrid({
+  state,
+  kind,
+  emptyMessage,
+  onSelect,
+  onRetry,
+  sentinelRef,
+  loadingMore,
+  done,
+}) {
   if (state.kind === 'loading') return <Centered><CircularProgress /></Centered>;
   if (state.kind === 'missingProxy') return <ProxyMissingPanel />;
   if (state.kind === 'error') {
@@ -525,20 +565,35 @@ function CollectionGrid({ state, kind, emptyMessage, onSelect, onRetry }) {
     );
   }
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        // Adaptive: as many ~180px tiles as fit, all equal size. Beats
-        // hand-tuned breakpoints because it scales smoothly to any width.
-        gridTemplateColumns: 'repeat(auto-fill, minmax(min(180px, 100%), 1fr))',
-        gap: 2,
-        alignItems: 'start',
-      }}
-    >
-      {state.items.map((item) => (
-        <CollectionCard key={item.id} item={item} kind={kind} onClick={() => onSelect(item)} />
-      ))}
-    </Box>
+    <>
+      <Box
+        sx={{
+          display: 'grid',
+          // Adaptive: as many ~180px tiles as fit, all equal size. Beats
+          // hand-tuned breakpoints because it scales smoothly to any width.
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(180px, 100%), 1fr))',
+          gap: 2,
+          alignItems: 'start',
+        }}
+      >
+        {state.items.map((item) => (
+          <CollectionCard key={item.id} item={item} kind={kind} onClick={() => onSelect(item)} />
+        ))}
+      </Box>
+      <Box ref={sentinelRef} sx={{ height: 1 }} />
+      {loadingMore && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+          <CircularProgress size={24} />
+        </Box>
+      )}
+      {done && (
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Typography variant="caption" color="text.secondary">
+            You've reached the end · {state.items.length} {kind === 'album' ? 'albums' : 'playlists'}
+          </Typography>
+        </Box>
+      )}
+    </>
   );
 }
 

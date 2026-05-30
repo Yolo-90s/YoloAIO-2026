@@ -42,7 +42,7 @@ export class MusicProxyMissing extends Error {
 
 // ── Songs ──────────────────────────────────────────────────────────────────
 
-export async function searchSongs({ baseUrl, query, languageCode, limit = 30 }) {
+export async function searchSongs({ baseUrl, query, languageCode, limit = 30, page = 1 }) {
   const effective = (
     query?.trim() ||
     MUSIC_DEFAULT_QUERY_BY_LANG[languageCode] ||
@@ -50,7 +50,7 @@ export async function searchSongs({ baseUrl, query, languageCode, limit = 30 }) 
   ).slice(0, 200);
   const json = await getJson(
     baseUrl,
-    `/search/songs?query=${encodeURIComponent(effective)}&limit=${limit}`
+    `/search/songs?query=${encodeURIComponent(effective)}&limit=${limit}&page=${page}`
   );
   const raw = json?.results ?? json?.data?.results ?? [];
   const tracks = Array.isArray(raw) ? raw.map(normalizeTrack).filter(Boolean) : [];
@@ -59,11 +59,11 @@ export async function searchSongs({ baseUrl, query, languageCode, limit = 30 }) 
 
 // ── Albums ─────────────────────────────────────────────────────────────────
 
-export async function searchAlbums({ baseUrl, query, limit = 24 }) {
+export async function searchAlbums({ baseUrl, query, limit = 24, page = 1 }) {
   const effective = (query?.trim() || 'top albums').slice(0, 200);
   const json = await getJson(
     baseUrl,
-    `/search/albums?query=${encodeURIComponent(effective)}&limit=${limit}`
+    `/search/albums?query=${encodeURIComponent(effective)}&limit=${limit}&page=${page}`
   );
   const raw = json?.results ?? [];
   return Array.isArray(raw) ? raw.map(normalizeAlbum).filter(Boolean) : [];
@@ -79,11 +79,11 @@ export async function fetchAlbum({ baseUrl, id }) {
 
 // ── Playlists ──────────────────────────────────────────────────────────────
 
-export async function searchPlaylists({ baseUrl, query, limit = 24 }) {
+export async function searchPlaylists({ baseUrl, query, limit = 24, page = 1 }) {
   const effective = (query?.trim() || 'trending playlists').slice(0, 200);
   const json = await getJson(
     baseUrl,
-    `/search/playlists?query=${encodeURIComponent(effective)}&limit=${limit}`
+    `/search/playlists?query=${encodeURIComponent(effective)}&limit=${limit}&page=${page}`
   );
   const raw = json?.results ?? [];
   return Array.isArray(raw) ? raw.map(normalizePlaylist).filter(Boolean) : [];

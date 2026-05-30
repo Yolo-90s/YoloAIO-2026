@@ -9,13 +9,14 @@ export default async function handler(req, res) {
   try {
     const query = String(req.query.query || 'top').slice(0, 200);
     const limit = Math.min(parseInt(req.query.limit, 10) || 30, 50);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const debug = String(req.query.debug || '') === '1';
 
     const data = await callJioSaavn({
       __call: 'search.getResults',
       q: query,
       n: String(limit),
-      p: '1',
+      p: String(page),
     });
 
     const raw = Array.isArray(data?.results) ? data.results : [];

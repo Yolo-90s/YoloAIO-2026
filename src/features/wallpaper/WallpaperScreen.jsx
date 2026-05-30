@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useInfinitePagination } from '../../ui/useInfinitePagination.js';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -33,7 +34,6 @@ export function WallpaperScreen() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [orientation, setOrientation] = useState('portrait');
   const [resolution, setResolution] = useState('any');
-  const [state, setState] = useState({ kind: 'loading' });
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -41,33 +41,52 @@ export function WallpaperScreen() {
     return () => clearTimeout(t);
   }, [query]);
 
+  const effectiveQuery = debouncedQuery || unsplashQuery(config.wallpapersUrl);
+
+  // Per-page fetch — Unsplash returns the same shape regardless of page.
+  // Resolution is applied client-side (filteredPhotos below) because the
+  // Unsplash search endpoint doesn't expose a min-resolution filter.
+  const fetchUnsplashPage = useCallback(
+    (page) =>
+      searchPhotos({
+        query: effectiveQuery,
+        accessKey: config.unsplashAccessKey,
+        orientation,
+        page,
+      }),
+    [effectiveQuery, config.unsplashAccessKey, orientation]
+  );
+
+  const depsKey = `${effectiveQuery}|${orientation}|${reload}`;
+
+  const {
+    items: photos,
+    loading,
+    loadingMore,
+    error,
+    done,
+    sentinelRef,
+  } = useInfinitePagination({
+    fetchPage: fetchUnsplashPage,
+    depsKey,
+    keyOf: (p) => p.id,
+    pageSize: 30, // matches the perPage default in searchPhotos
+    enabled: Boolean(config.unsplashAccessKey),
+  });
+
   useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!config.unsplashAccessKey) {
-        setState({ kind: 'missingKey' });
-        return;
-      }
-      setState({ kind: 'loading' });
-      const effectiveQuery = debouncedQuery || unsplashQuery(config.wallpapersUrl);
-      try {
-        const photos = await searchPhotos({
-          query: effectiveQuery,
-          accessKey: config.unsplashAccessKey,
-          orientation,
-        });
-        if (cancelled) return;
-        wallpaperCache.set(photos);
-        setState({ kind: 'ready', photos });
-      } catch (e) {
-        if (!cancelled) setState({ kind: 'error', message: e.message });
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedQuery, orientation, config.unsplashAccessKey, config.wallpapersUrl, reload]);
+    if (photos.length > 0) wallpaperCache.set(photos);
+  }, [photos]);
+
+  // Shape kept identical to the prior render machine so the JSX below
+  // still works without bigger churn.
+  const state = !config.unsplashAccessKey
+    ? { kind: 'missingKey' }
+    : loading
+    ? { kind: 'loading' }
+    : error
+    ? { kind: 'error', message: error }
+    : { kind: 'ready', photos };
 
   const filteredPhotos = useMemo(() => {
     if (state.kind !== 'ready') return [];
@@ -125,7 +144,24 @@ export function WallpaperScreen() {
           message="Try a wider resolution filter or a different orientation."
         />
       ) : (
-        <PinterestGrid photos={filteredPhotos} onClick={(id) => navigate(routes.wallpaperDetail(id))} />
+        <>
+          <PinterestGrid photos={filteredPhotos} onClick={(id) => navigate(routes.wallpaperDetail(id))} />
+          {/* Sentinel — IntersectionObserver in useInfinitePagination
+              fires loadMore when this enters the viewport. */}
+          <Box ref={sentinelRef} sx={{ height: 1 }} />
+          {loadingMore && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress size={28} />
+            </Box>
+          )}
+          {done && filteredPhotos.length > 0 && (
+            <Box sx={{ textAlign: 'center', py: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                You've reached the end · {filteredPhotos.length} photos
+              </Typography>
+            </Box>
+          )}
+        </>
       )}
     </FeatureScaffold>
   );
