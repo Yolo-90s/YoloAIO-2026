@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { YoloThemeProvider } from './theme/ThemeProvider.jsx';
 import { AppBackground } from './ui/AppBackground.jsx';
 import { AppShell } from './ui/AppShell.jsx';
+import { LaunchAnimation } from './ui/LaunchAnimation.jsx';
 import { UserSessionProvider, useCurrentUser } from './data/UserSession.jsx';
 import { AppConfigProvider } from './data/AppConfig.jsx';
 import { routes } from './routes.js';
@@ -40,6 +42,10 @@ import { BookFavoritesScreen } from './features/books/BookFavoritesScreen.jsx';
 import { StyleYourselfScreen } from './features/style/StyleYourselfScreen.jsx';
 
 export default function App() {
+  // Show the 3-second cyberpunk decryption splash on first mount of the
+  // app. Once it fades out we never replay during the session — the user
+  // would only see it again on a hard refresh.
+  const [splashDone, setSplashDone] = useState(false);
   return (
     <YoloThemeProvider>
       <UserSessionProvider>
@@ -49,6 +55,7 @@ export default function App() {
           </AppBackground>
         </AppConfigProvider>
       </UserSessionProvider>
+      {!splashDone && <LaunchAnimation onComplete={() => setSplashDone(true)} />}
     </YoloThemeProvider>
   );
 }
