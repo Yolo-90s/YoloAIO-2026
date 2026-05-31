@@ -16,7 +16,6 @@ import {
   useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MenuIcon from '@mui/icons-material/Menu';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -89,19 +88,16 @@ export function TopBar() {
           }}
         >
           <Box
+            component="img"
+            src="/yoloaio-icon.svg"
+            alt="YoloAIO"
             sx={{
               width: 36,
               height: 36,
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #FF66D4 0%, #B829E5 50%, #3F61FF 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
+              borderRadius: '8px',
+              display: 'block',
             }}
-          >
-            <AutoAwesomeIcon sx={{ fontSize: 20 }} />
-          </Box>
+          />
           <Typography variant="subtitle1" sx={{ fontWeight: 700, letterSpacing: '-0.5px' }}>
             Yolo AIO
           </Typography>

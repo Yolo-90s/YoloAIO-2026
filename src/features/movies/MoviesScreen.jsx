@@ -19,7 +19,9 @@ import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { SearchField } from '../../ui/SearchField.jsx';
 import { FilterButton } from '../../ui/FilterButton.jsx';
 import { useAppConfig, tmdbAuth } from '../../data/AppConfig.jsx';
-import { TMDB, posterUrl, tmdbCache } from './tmdbClient.js';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { TMDB, posterUrl, tmdbCache, genresFor } from './tmdbClient.js';
+import { CategoryRow } from './CategoryRow.jsx';
 import { routes } from '../../routes.js';
 
 const CATEGORIES = [
@@ -38,29 +40,56 @@ export function MoviesScreen() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [reload, setReload] = useState(0);
+  // When the user clicks "See all" on a Browse-mode category row, we
+  // flip into grid mode filtered to that source. The object holds
+  // either { kind: 'trending' | 'top_rated' } or
+  // { kind: 'genre', id, name }. null = follow normal category state.
+  const [seeAllSource, setSeeAllSource] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query.trim()), 400);
     return () => clearTimeout(t);
   }, [query]);
 
+  // Clear the "See all" pin when the user switches between movies/TV
+  // or starts a search — both are mode-shifts where the previous
+  // "Action movies" context no longer makes sense.
+  useEffect(() => {
+    setSeeAllSource(null);
+  }, [media, debouncedQuery]);
+
   // Per-page TMDB fetch — closed over the current media/category/query
   // via useCallback so the hook re-runs whenever those change.
+  // Are we showing the Netflix-style category rows (the default
+  // landing) or the flat infinite-scroll grid? Browse mode is on when
+  // the user has no search query, hasn't picked a non-default
+  // category, and isn't drilled into a "See all" row.
+  const isBrowseMode =
+    !debouncedQuery && category === 'popular' && !seeAllSource;
+
   const fetchTmdbPage = useCallback(
     async (page) => {
-      // enabled: Boolean(auth) below ensures we never call this without
-      // a valid TMDB key, so an explicit null-check would be unreachable.
       if (debouncedQuery) return TMDB.search(media, debouncedQuery, auth, page);
+      // "See all" override takes precedence over the category chip.
+      if (seeAllSource) {
+        if (seeAllSource.kind === 'trending') return TMDB.trending(media, auth, page);
+        if (seeAllSource.kind === 'top_rated') return TMDB.topRated(media, auth, page);
+        if (seeAllSource.kind === 'genre')
+          return TMDB.discover(media, auth, { with_genres: seeAllSource.id }, page);
+      }
       if (category === 'popular') return TMDB.popular(media, auth, page);
       if (category === 'top_rated') return TMDB.topRated(media, auth, page);
       return TMDB.trending(media, auth, page);
     },
-    [auth, media, category, debouncedQuery]
+    [auth, media, category, debouncedQuery, seeAllSource]
   );
 
-  // Cache-bust the pager whenever the user changes media/category/query
+  // Cache-bust the pager whenever the user changes media/category/query/seeAll
   // OR taps Retry. Including reload in the key resets pagination.
-  const depsKey = `${media}|${category}|${debouncedQuery}|${reload}`;
+  const seeAllKey = seeAllSource
+    ? `${seeAllSource.kind}-${seeAllSource.id ?? ''}`
+    : '';
+  const depsKey = `${media}|${category}|${seeAllKey}|${debouncedQuery}|${reload}`;
 
   const {
     items: titles,
@@ -74,7 +103,7 @@ export function MoviesScreen() {
     depsKey,
     keyOf: (t) => `${t.mediaType}-${t.id}`,
     pageSize: 20, // TMDb returns 20 results per page
-    enabled: Boolean(auth),
+    enabled: Boolean(auth) && !isBrowseMode,
   });
 
   // Keep the in-memory cache fed so detail screens can pick up titles
@@ -120,14 +149,45 @@ export function MoviesScreen() {
         <Tab value="tv" label="TV" />
       </Tabs>
 
-      {state.kind === 'loading' ? (
-        <Centered><CircularProgress /></Centered>
-      ) : state.kind === 'missingKey' ? (
+      {/* If user is drilled into a "See all" row, show a small back
+          chip so they can return to the browse view. */}
+      {seeAllSource && (
+        <Stack direction="row" alignItems="center" sx={{ mb: 2 }} spacing={1}>
+          <Button
+            size="small"
+            onClick={() => setSeeAllSource(null)}
+            startIcon={<ArrowBackIcon />}
+            sx={{ textTransform: 'none' }}
+          >
+            Back to browse
+          </Button>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            {seeAllSource.kind === 'trending'
+              ? 'Trending'
+              : seeAllSource.kind === 'top_rated'
+              ? 'Top Rated'
+              : `${seeAllSource.name} ${media === 'tv' ? 'shows' : 'movies'}`}
+          </Typography>
+        </Stack>
+      )}
+
+      {!auth ? (
         <ErrorPanel
           icon={<MovieIcon sx={{ fontSize: 56 }} />}
           title="TMDB key missing"
           message="Add tmdbApiKey (v3) or tmdbAccessToken (v4 bearer) to the Firestore config/app document."
         />
+      ) : isBrowseMode ? (
+        <BrowseRows
+          media={media}
+          auth={auth}
+          onSelect={(t) =>
+            navigate(t.mediaType === 'tv' ? routes.tvDetail(t.id) : routes.movieDetail(t.id))
+          }
+          onSeeAll={setSeeAllSource}
+        />
+      ) : state.kind === 'loading' ? (
+        <Centered><CircularProgress /></Centered>
       ) : state.kind === 'error' ? (
         <ErrorPanel
           icon={<CloudOffIcon sx={{ fontSize: 56 }} />}
@@ -180,6 +240,51 @@ export function MoviesScreen() {
         </>
       )}
     </FeatureScaffold>
+  );
+}
+
+/**
+ * Browse view — Netflix-style vertical stack of horizontal category
+ * rows. The fixed rows (Trending / Top Rated) sit at the top so the
+ * landing screen always has something "above the fold"; one row per
+ * genre follows. Each row is independent — failures in one don't
+ * cascade, and rows with zero results hide themselves rather than
+ * showing a sad placeholder.
+ */
+function BrowseRows({ media, auth, onSelect, onSeeAll }) {
+  const genres = genresFor(media);
+  const noun = media === 'tv' ? 'shows' : 'movies';
+  return (
+    <Box>
+      <CategoryRow
+        title={`Trending this week`}
+        fetchRow={() => TMDB.trending(media, auth, 1)}
+        PosterTile={PosterTile}
+        onSelect={onSelect}
+        onSeeAll={() => onSeeAll({ kind: 'trending' })}
+      />
+      <CategoryRow
+        title="Top Rated"
+        fetchRow={() => TMDB.topRated(media, auth, 1)}
+        PosterTile={PosterTile}
+        onSelect={onSelect}
+        onSeeAll={() => onSeeAll({ kind: 'top_rated' })}
+      />
+      {genres.map((g) => (
+        <CategoryRow
+          key={g.id}
+          title={`${g.name} ${noun}`}
+          // Each row fetches independently — a closure over `g.id` so
+          // CategoryRow's useEffect re-runs when the genre changes
+          // (it won't in practice because rows are mounted once, but
+          // the closure makes intent clear).
+          fetchRow={() => TMDB.discover(media, auth, { with_genres: g.id }, 1)}
+          PosterTile={PosterTile}
+          onSelect={onSelect}
+          onSeeAll={() => onSeeAll({ kind: 'genre', id: g.id, name: g.name })}
+        />
+      ))}
+    </Box>
   );
 }
 

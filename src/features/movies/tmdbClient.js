@@ -71,6 +71,23 @@ export const TMDB = {
   trending(media, auth, page = 1, window = 'week') {
     return getList(`/trending/${media}/${window}`, { page, language: 'en-US' }, auth, media);
   },
+  // `/discover/{movie|tv}` is TMDb's powerful filter endpoint — accepts
+  // `with_genres`, `sort_by`, year ranges, language, etc. Used by the
+  // Browse-mode category rows to pull one row per genre.
+  discover(media, auth, params = {}, page = 1) {
+    return getList(
+      `/discover/${media}`,
+      {
+        page,
+        language: 'en-US',
+        sort_by: 'popularity.desc',
+        include_adult: 'false',
+        ...params,
+      },
+      auth,
+      media
+    );
+  },
   async search(media, query, auth, page = 1) {
     if (!query?.trim()) return [];
     return getList(
@@ -118,6 +135,40 @@ export const TMDB = {
     }));
   },
 };
+
+// TMDb genre IDs — canonical values from `/genre/movie/list` and
+// `/genre/tv/list`. Hardcoded so we skip an extra round-trip; the
+// list is stable (TMDb hasn't changed these IDs in a decade).
+export const MOVIE_GENRES = [
+  { id: 28,    name: 'Action' },
+  { id: 12,    name: 'Adventure' },
+  { id: 16,    name: 'Animation' },
+  { id: 35,    name: 'Comedy' },
+  { id: 80,    name: 'Crime' },
+  { id: 18,    name: 'Drama' },
+  { id: 10751, name: 'Family' },
+  { id: 14,    name: 'Fantasy' },
+  { id: 27,    name: 'Horror' },
+  { id: 9648,  name: 'Mystery' },
+  { id: 10749, name: 'Romance' },
+  { id: 878,   name: 'Sci-Fi' },
+  { id: 53,    name: 'Thriller' },
+];
+
+export const TV_GENRES = [
+  { id: 10759, name: 'Action & Adventure' },
+  { id: 16,    name: 'Animation' },
+  { id: 35,    name: 'Comedy' },
+  { id: 80,    name: 'Crime' },
+  { id: 18,    name: 'Drama' },
+  { id: 10751, name: 'Family' },
+  { id: 9648,  name: 'Mystery' },
+  { id: 10765, name: 'Sci-Fi & Fantasy' },
+];
+
+export function genresFor(media) {
+  return media === 'tv' ? TV_GENRES : MOVIE_GENRES;
+}
 
 const cache = new Map();
 export const tmdbCache = {

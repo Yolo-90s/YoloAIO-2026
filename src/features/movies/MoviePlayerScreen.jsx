@@ -3,6 +3,7 @@ import { Box, CircularProgress, Stack } from '@mui/material';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { movieEmbedUrl } from './vidkingPlayer.js';
 import { useWatchProgress } from './useWatchProgress.js';
+import { PlayerCastButton } from './PlayerCastButton.jsx';
 
 export function MoviePlayerScreen() {
   const { movieId } = useParams();
@@ -29,6 +30,7 @@ export function MoviePlayerScreen() {
     <FeatureScaffold title="Now playing">
       <Box
         sx={{
+          position: 'relative',
           aspectRatio: '16 / 9',
           borderRadius: '16px',
           overflow: 'hidden',
@@ -42,6 +44,11 @@ export function MoviePlayerScreen() {
           allowFullScreen
           sx={{ width: '100%', height: '100%', border: 0, display: 'block' }}
         />
+        {/* Floating Cast button — overlays the iframe. Hidden on
+            browsers without Cast support (Firefox / Safari). */}
+        <Box sx={{ position: 'absolute', top: 12, right: 12, zIndex: 2 }}>
+          <PlayerCastButton />
+        </Box>
       </Box>
     </FeatureScaffold>
   );

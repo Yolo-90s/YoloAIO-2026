@@ -3,6 +3,7 @@ import { Box, CircularProgress, Stack } from '@mui/material';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { tvEmbedUrl } from './vidkingPlayer.js';
 import { useWatchProgress } from './useWatchProgress.js';
+import { PlayerCastButton } from './PlayerCastButton.jsx';
 
 export function TvPlayerScreen() {
   const { tvId, season, episode } = useParams();
@@ -29,6 +30,7 @@ export function TvPlayerScreen() {
     <FeatureScaffold title={`S${season} · E${episode}`}>
       <Box
         sx={{
+          position: 'relative',
           aspectRatio: '16 / 9',
           borderRadius: '16px',
           overflow: 'hidden',
@@ -42,6 +44,9 @@ export function TvPlayerScreen() {
           allowFullScreen
           sx={{ width: '100%', height: '100%', border: 0, display: 'block' }}
         />
+        <Box sx={{ position: 'absolute', top: 12, right: 12, zIndex: 2 }}>
+          <PlayerCastButton />
+        </Box>
       </Box>
     </FeatureScaffold>
   );
