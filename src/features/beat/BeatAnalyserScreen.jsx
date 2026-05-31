@@ -4,22 +4,53 @@ import {
   Button,
   CircularProgress,
   IconButton,
+  Slider,
   Stack,
   Tab,
   Tabs,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
 import CloseIcon from '@mui/icons-material/Close';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { getMicAnalyzer, useMicAnalyzer, BANDS } from './micAnalyzer.js';
 
-const PALETTE = [
-  '#FF0066', '#00FFFF', '#FFFF00', '#FF00FF',
-  '#00FF66', '#FF6600', '#0066FF', '#FF3366',
-  '#66FFCC', '#FFAA00', '#AA00FF', '#00CCFF',
-  '#FF00AA', '#CCFF00', '#FF99CC', '#6600FF',
+// Bars are interleaved bass/mid/high (index % 3). 36 ≈ 12 bars per band
+// — dense enough to feel like a real spectrum, sparse enough for the
+// band assignment to read clearly. Change this and the dispatch math
+// in SpectrumBars adapts.
+const BAR_COUNT = 36;
+
+// Per-band color palettes for the disco. Each entry is RGB tuple — kept
+// outside the component so the index rotation per beat persists across
+// React renders (we still cache the rotated indices in refs, not state).
+const BASS_COLORS = [
+  [255, 23, 68],     // #FF1744 — vivid red
+  [255, 107, 53],    // #FF6B35 — orange
+  [156, 39, 176],    // #9C27B0 — deep purple
+  [183, 28, 28],     // #B71C1C — crimson
+];
+const MID_COLORS = [
+  [0, 188, 212],     // #00BCD4 — cyan
+  [33, 150, 243],    // #2196F3 — blue
+  [3, 169, 244],     // #03A9F4 — light blue
+  [128, 222, 234],   // #80DEEA — pale cyan
+];
+const HIGH_COLORS = [
+  [255, 235, 59],    // #FFEB3B — yellow
+  [118, 255, 3],     // #76FF03 — lime
+  [236, 64, 122],    // #EC407A — pink
+  [76, 175, 80],     // #4CAF50 — green
+];
+
+// Bar colors — bass = warm, mid = cool, high = bright.
+const BAR_COLORS = [
+  { top: '#FF1744', bot: '#FF6B35' },  // bass
+  { top: '#00BCD4', bot: '#2196F3' },  // mid
+  { top: '#FFEB3B', bot: '#EC407A' },  // high
 ];
 
 export function BeatAnalyserScreen() {
@@ -27,9 +58,14 @@ export function BeatAnalyserScreen() {
   const state = useMicAnalyzer();
   const [permission, setPermission] = useState('unknown'); // 'granted' | 'denied' | 'unknown'
   const [tab, setTab] = useState(0);
+  const [sensitivity, setSensitivity] = useState(() => analyzer.getSensitivity());
 
-  // Auto-start the analyzer when the screen mounts. If the user denied
-  // permission, show the prompt panel and let them retry.
+  // Push slider values into the analyzer so the canvases read pre-multiplied
+  // bands and stay decoupled from React state.
+  useEffect(() => {
+    analyzer.setSensitivity(sensitivity);
+  }, [analyzer, sensitivity]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -48,7 +84,8 @@ export function BeatAnalyserScreen() {
     setPermission(ok ? 'granted' : 'denied');
   };
 
-  // ── Full-screen disco branch — no FeatureScaffold chrome ────────
+  // Full-screen disco — bypass FeatureScaffold so the canvas covers the
+  // entire viewport including the app's sticky TopBar.
   if (permission === 'granted' && tab === 1) {
     return (
       <Box
@@ -59,10 +96,10 @@ export function BeatAnalyserScreen() {
           right: 0,
           bottom: 0,
           backgroundColor: '#000',
-          zIndex: 1200, // above the app's TopBar (sticky AppBar is ~1100)
+          zIndex: 1200,
         }}
       >
-        <DiscoCanvas state={state} />
+        <DiscoCanvas analyzer={analyzer} />
         <IconButton
           onClick={() => setTab(0)}
           sx={{
@@ -114,7 +151,12 @@ export function BeatAnalyserScreen() {
               <CircularProgress />
             </Stack>
           ) : (
-            <SpectrumBody state={state} />
+            <SpectrumBody
+              analyzer={analyzer}
+              state={state}
+              sensitivity={sensitivity}
+              setSensitivity={setSensitivity}
+            />
           )}
         </>
       )}
@@ -124,28 +166,29 @@ export function BeatAnalyserScreen() {
 
 // ── Spectrum tab ────────────────────────────────────────────────────
 
-function SpectrumBody({ state }) {
+function SpectrumBody({ analyzer, state, sensitivity, setSensitivity }) {
   return (
     <Stack spacing={3}>
       <NoiseMeter db={state.rmsDb} pulse={state.pulse} />
       <Box>
         <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1.2 }}>
-          Spectrum
+          Spectrum · Bass / Mid / High
         </Typography>
-        <SpectrumBars bands={state.bandMagnitudes} pulse={state.pulse} />
+        <SpectrumBars analyzer={analyzer} />
+        <BandLegend />
       </Box>
       <Box>
         <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1.2 }}>
           Beat tiles
         </Typography>
-        <BeatTileGrid energies={state.bandEnergies} pulse={state.pulse} />
+        <BeatTileGrid analyzer={analyzer} />
       </Box>
+      <SensitivityPanel sensitivity={sensitivity} setSensitivity={setSensitivity} />
     </Stack>
   );
 }
 
 function NoiseMeter({ db, pulse }) {
-  // Map -50 dBFS → 0%, 0 dBFS → 100%. Same scale as the Android side.
   const dbFloor = -50;
   const normalized = Math.max(0, Math.min(1, (db - dbFloor) / -dbFloor));
   const percent = Math.round(normalized * 100);
@@ -162,7 +205,7 @@ function NoiseMeter({ db, pulse }) {
 
   const radius = 90;
   const stroke = 14;
-  const circumference = 2 * Math.PI * radius * 0.75; // 270° arc
+  const circumference = 2 * Math.PI * radius * 0.75;
   return (
     <Stack alignItems="center" sx={{ position: 'relative', py: 2 }}>
       <Box sx={{ position: 'relative', width: 240, height: 200 }}>
@@ -236,33 +279,70 @@ function NoiseMeter({ db, pulse }) {
   );
 }
 
-function SpectrumBars({ bands, pulse }) {
+// ── Spectrum bars ──────────────────────────────────────────────────
+//
+// 36 bars, cyclically assigned: index%3 == 0 → bass, 1 → mid, 2 → high.
+// Each bar pulls from its OWN sub-bin within its band, so bass bars
+// (1, 4, 7, …) all reflect bass energy but show variation across the
+// kick→bass FFT range. Means: when bass hits, every third bar from the
+// left (1, 4, 7, 10, …) spikes — the visual band separation the user
+// asked for.
+//
+// Bars read snapshot directly inside RAF. The effect deps are `[analyzer]`
+// (stable) so the RAF loop is set up ONCE on mount, never torn down per
+// frame — fixing the bug where the previous version restarted the RAF
+// every audio update.
+function SpectrumBars({ analyzer }) {
   const canvasRef = useRef(null);
-  const peaksRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const barCount = 48;
 
-    if (!peaksRef.current || peaksRef.current.length !== barCount) {
-      peaksRef.current = new Float32Array(barCount);
+    // Per-bar state, allocated once.
+    const peaks = new Float32Array(BAR_COUNT);
+    const assignment = new Uint8Array(BAR_COUNT);
+    const binIndex = new Int32Array(BAR_COUNT);
+
+    // Cyclic assignment + sub-bin spread within each band.
+    let bassCount = 0, midCount = 0, highCount = 0;
+    for (let i = 0; i < BAR_COUNT; i++) {
+      assignment[i] = i % 3;
+      if (assignment[i] === 0) bassCount++;
+      else if (assignment[i] === 1) midCount++;
+      else highCount++;
     }
-
-    // Pre-compute log-spaced bin indices.
-    const minBin = Math.max(1, BANDS.sub.start);
-    const maxBin = BANDS.highs.end;
-    const logMin = Math.log2(minBin);
-    const logMax = Math.log2(maxBin);
-    const binIndex = new Int32Array(barCount);
-    for (let i = 0; i < barCount; i++) {
-      const t = i / (barCount - 1);
-      binIndex[i] = Math.floor(Math.pow(2, logMin + t * (logMax - logMin)));
+    let bIdx = 0, mIdx = 0, hIdx = 0;
+    const bassStart = BANDS.kick.start;
+    const bassEnd   = BANDS.bass.end;
+    const midStart  = BANDS.mids.start;
+    const midEnd    = BANDS.mids.end;
+    const highStart = BANDS.highs.start;
+    const highEnd   = BANDS.highs.end;
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const a = assignment[i];
+      if (a === 0) {
+        const t = bIdx / Math.max(1, bassCount - 1);
+        binIndex[i] = Math.floor(bassStart + t * (bassEnd - bassStart - 1));
+        bIdx++;
+      } else if (a === 1) {
+        const t = mIdx / Math.max(1, midCount - 1);
+        binIndex[i] = Math.floor(midStart + t * (midEnd - midStart - 1));
+        mIdx++;
+      } else {
+        const t = hIdx / Math.max(1, highCount - 1);
+        binIndex[i] = Math.floor(highStart + t * (highEnd - highStart - 1));
+        hIdx++;
+      }
     }
 
     let raf = 0;
     const draw = () => {
+      const snap = analyzer.getSnapshot();
+      const data = snap.bandMagnitudes;
+      const sens = analyzer.sensitivity; // live ref read — sliders update this
+
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const cssW = canvas.clientWidth;
       const cssH = canvas.clientHeight;
@@ -274,36 +354,44 @@ function SpectrumBars({ bands, pulse }) {
       ctx.clearRect(0, 0, cssW, cssH);
 
       const gap = cssW * 0.005;
-      const barW = (cssW - gap * (barCount - 1)) / barCount;
-      const cornerR = barW / 2;
-      const peaks = peaksRef.current;
-      const data = bands;
+      const barW = (cssW - gap * (BAR_COUNT - 1)) / BAR_COUNT;
+      const cornerR = Math.min(3, barW / 2);
 
-      for (let i = 0; i < barCount; i++) {
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const a = assignment[i];
         let raw;
         if (data) {
           const idx = Math.min(data.length - 1, binIndex[i]);
           raw = Math.min(1, data[idx]);
         } else {
-          raw = 0.06 + Math.sin(performance.now() / 200 + i * 0.3) * 0.05;
+          raw = 0.04 + Math.sin(performance.now() / 200 + i * 0.3) * 0.03;
         }
-        // Perceptual sqrt + 12× gain — same trick as Android side.
-        const boosted = Math.min(1, Math.sqrt(raw * 12));
-        // Per-bar peak-hold: fast attack, slow release.
+
+        const sensMul = a === 0 ? sens.bass : a === 1 ? sens.mid : sens.high;
+        // Bass FFT bins are narrower / lower magnitude per bin, so they
+        // need the most gain. Highs sit on more bins so they read hotter
+        // naturally — pull the gain down a little.
+        const gain = a === 0 ? 14 : a === 1 ? 11 : 9;
+        const boosted = Math.min(1, Math.sqrt(raw * gain * sensMul));
+
         const prev = peaks[i];
-        peaks[i] = boosted > prev ? prev + (boosted - prev) * 0.55 : prev + (boosted - prev) * 0.08;
-        const value = Math.max(0.04, Math.min(1, peaks[i] + pulse * 0.22));
+        peaks[i] = boosted > prev
+          ? prev + (boosted - prev) * 0.6
+          : prev + (boosted - prev) * 0.08;
+        const value = Math.max(0.03, peaks[i]);
+
         const barH = cssH * value;
         const x = i * (barW + gap);
         const y = cssH - barH;
 
+        const c = BAR_COLORS[a];
         const grad = ctx.createLinearGradient(0, y, 0, cssH);
-        grad.addColorStop(0, '#FF66D4');
-        grad.addColorStop(1, '#7C9CFF');
+        grad.addColorStop(0, c.top);
+        grad.addColorStop(1, c.bot);
         ctx.fillStyle = grad;
         if (typeof ctx.roundRect === 'function') {
           ctx.beginPath();
-          ctx.roundRect(x, y, barW, barH, Math.min(3, barW / 2));
+          ctx.roundRect(x, y, barW, barH, cornerR);
           ctx.fill();
         } else {
           ctx.fillRect(x, y, barW, barH);
@@ -313,13 +401,13 @@ function SpectrumBars({ bands, pulse }) {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [bands, pulse]);
+  }, [analyzer]);
 
   return (
     <Box
       sx={{
         mt: 1,
-        height: 120,
+        height: 140,
         backgroundColor: 'rgba(255,255,255,0.04)',
         borderRadius: '16px',
         overflow: 'hidden',
@@ -330,70 +418,251 @@ function SpectrumBars({ bands, pulse }) {
   );
 }
 
-function BeatTileGrid({ energies, pulse }) {
-  const rows = [
-    ['SUB',  energies.sub],
-    ['KICK', energies.kick],
-    ['BASS', energies.bass],
-    ['MIDS', energies.mids],
+function BandLegend() {
+  const items = [
+    { label: 'Bass · 20–350 Hz',  color: '#FF6B35' },
+    { label: 'Mid · 350 Hz–2 kHz', color: '#2196F3' },
+    { label: 'High · 2 kHz+',     color: '#EC407A' },
   ];
-  const tilesPerRow = 6;
   return (
-    <Stack spacing={0.75} sx={{ mt: 1 }}>
-      {rows.map(([label, value]) => {
-        const boosted = Math.min(1, Math.sqrt(value * 10));
-        const lit = Math.floor(Math.min(1, boosted + pulse * 0.35) * tilesPerRow);
-        return (
-          <Stack key={label} direction="row" alignItems="center" spacing={0.75}>
-            <Typography
-              sx={{
-                width: 44,
-                fontSize: 10,
-                fontWeight: 700,
-                color: 'text.secondary',
-              }}
-            >
-              {label}
-            </Typography>
-            {Array.from({ length: tilesPerRow }).map((_, idx) => {
-              const isLit = idx < lit;
-              const isFlash = idx === tilesPerRow - 1 && pulse > 0.05;
-              const alpha = isLit ? 0.85 : isFlash ? 0.5 + pulse * 0.5 : 0.18;
-              const color = idx < tilesPerRow / 2 ? '#FF66D4' : '#7C9CFF';
-              return (
-                <Box
-                  key={idx}
-                  sx={{
-                    flex: 1,
-                    height: 28,
-                    borderRadius: '6px',
-                    backgroundColor: color,
-                    opacity: alpha,
-                    transition: 'opacity 60ms linear',
-                  }}
-                />
-              );
-            })}
-          </Stack>
-        );
-      })}
+    <Stack direction="row" spacing={1.5} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.5 }}>
+      {items.map((it) => (
+        <Stack key={it.label} direction="row" alignItems="center" spacing={0.5}>
+          <Box sx={{ width: 10, height: 10, borderRadius: '3px', backgroundColor: it.color }} />
+          <Typography variant="caption" color="text.secondary">{it.label}</Typography>
+        </Stack>
+      ))}
     </Stack>
   );
 }
 
-// ── Disco tab — full-screen color show ──────────────────────────────
+// ── Beat tiles ──────────────────────────────────────────────────────
+//
+// Three rows (BASS/MID/HIGH). The number of LIT tiles in each row reflects
+// the current sensitivity-adjusted band energy. Beat events (state.beatTime
+// rising edge) trigger a scale + glow on the row whose band currently
+// dominates — so quiet background noise doesn't strobe the grid.
+function BeatTileGrid({ analyzer }) {
+  const containerRef = useRef(null);
 
-function DiscoCanvas({ state }) {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const tiles = Array.from(container.querySelectorAll('[data-tile]'));
+    const tilesPerRow = 8;
+
+    let lastBeatTime = 0;
+    let beatDominantRow = -1;
+    let raf = 0;
+
+    const draw = () => {
+      const snap = analyzer.getSnapshot();
+      const { bands, beatTime, beatFlash } = snap;
+      const rowEnergies = [bands.bass, bands.mid, bands.high];
+
+      // On rising edge of beatTime, latch which row is the "owner" of
+      // this beat (highest energy at the moment) so the glow happens on
+      // a single coherent row instead of flickering between them.
+      if (beatTime > lastBeatTime) {
+        let max = -1;
+        let argmax = 0;
+        for (let r = 0; r < 3; r++) if (rowEnergies[r] > max) { max = rowEnergies[r]; argmax = r; }
+        beatDominantRow = argmax;
+        lastBeatTime = beatTime;
+      }
+
+      for (const tile of tiles) {
+        const row = +tile.dataset.row;
+        const idx = +tile.dataset.idx;
+        const e = rowEnergies[row];
+        // Perceptual boost — same trick as bars, slightly gentler so the
+        // tile lit-count doesn't max out from ambient room sound.
+        const boosted = Math.min(1, Math.sqrt(e * 6));
+        const lit = Math.round(boosted * tilesPerRow);
+        const isLit = idx < lit;
+
+        const isBeatRow = row === beatDominantRow && beatFlash > 0.05;
+        const alpha = isLit ? 0.92 : 0.13 + (isBeatRow ? beatFlash * 0.35 : 0);
+        const scale = isLit && isBeatRow ? 1 + beatFlash * 0.18 : 1;
+        const glow = isLit && isBeatRow
+          ? `0 0 ${10 + beatFlash * 14}px rgba(255,255,255,${beatFlash * 0.7})`
+          : 'none';
+
+        // Direct style writes — avoids React reconciliation per frame.
+        tile.style.opacity = String(alpha);
+        tile.style.transform = `scale(${scale})`;
+        tile.style.boxShadow = glow;
+      }
+
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [analyzer]);
+
+  const rows = [
+    { label: 'BASS', color: '#FF6B35' },
+    { label: 'MID',  color: '#2196F3' },
+    { label: 'HIGH', color: '#EC407A' },
+  ];
+  const tilesPerRow = 8;
+
+  return (
+    <Stack ref={containerRef} spacing={0.75} sx={{ mt: 1 }}>
+      {rows.map((row, ri) => (
+        <Stack key={row.label} direction="row" alignItems="center" spacing={0.75}>
+          <Typography sx={{ width: 44, fontSize: 10, fontWeight: 700, color: 'text.secondary' }}>
+            {row.label}
+          </Typography>
+          {Array.from({ length: tilesPerRow }).map((_, idx) => (
+            <Box
+              key={idx}
+              data-tile=""
+              data-row={ri}
+              data-idx={idx}
+              sx={{
+                flex: 1,
+                height: 28,
+                borderRadius: '6px',
+                backgroundColor: row.color,
+                opacity: 0.13,
+                transformOrigin: 'center',
+                willChange: 'transform, opacity, box-shadow',
+              }}
+            />
+          ))}
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+// ── Sensitivity sliders ────────────────────────────────────────────
+
+function SensitivityPanel({ sensitivity, setSensitivity }) {
+  const reset = () => setSensitivity({ bass: 1, mid: 1, high: 1 });
+  const rows = [
+    { key: 'bass', label: 'Bass sensitivity', color: '#FF6B35' },
+    { key: 'mid',  label: 'Mid sensitivity',  color: '#2196F3' },
+    { key: 'high', label: 'High sensitivity', color: '#EC407A' },
+  ];
+  return (
+    <Box sx={{ mt: 1, p: 2, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '14px' }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+        <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 1.2 }}>
+          Sensitivity
+        </Typography>
+        <Tooltip title="Reset to 1.0×">
+          <IconButton size="small" onClick={reset}>
+            <RestartAltIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+      <Stack spacing={1.5}>
+        {rows.map((r) => (
+          <Stack key={r.key} direction="row" alignItems="center" spacing={2}>
+            <Box sx={{ width: 10, height: 10, borderRadius: '3px', backgroundColor: r.color, flexShrink: 0 }} />
+            <Typography sx={{ width: 130, fontSize: 12, color: 'text.secondary' }}>
+              {r.label}
+            </Typography>
+            <Slider
+              size="small"
+              min={0.2}
+              max={3}
+              step={0.05}
+              value={sensitivity[r.key]}
+              onChange={(_, v) => setSensitivity((s) => ({ ...s, [r.key]: v }))}
+              sx={{ color: r.color, flex: 1 }}
+            />
+            <Typography sx={{ width: 38, fontSize: 12, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+              {sensitivity[r.key].toFixed(2)}×
+            </Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
+
+// ── Disco — full-screen single dominant color ──────────────────────
+//
+// One color fills the screen at a time. The target color is a weighted
+// blend of three palettes (bass / mid / high) — whichever band is
+// loudest steers the mix. A confirmed beat (analyzer.state.beatTime
+// rising) rotates each palette's pointer, so consecutive bass-heavy
+// moments cycle through the bass palette colors rather than locking.
+//
+// LERP between current displayed RGB and target keeps transitions
+// smooth — no per-frame flashing. Beat events add a brief brightness
+// pulse (additive RGB) so beats still feel kicky.
+function DiscoCanvas({ analyzer }) {
   const canvasRef = useRef(null);
-  const idxRef = useRef({ bass: 0, mids: 5, highs: 10, lastBeat: 0, prev: 0 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+
+    let bassIdx = 0, midIdx = 0, highIdx = 0;
+    let lastBeatTime = 0;
+    let lastIdleRotate = performance.now();
+    let curR = 18, curG = 18, curB = 22;
     let raf = 0;
 
     const draw = () => {
+      const snap = analyzer.getSnapshot();
+      const { bands, beatTime, beatFlash } = snap;
+
+      const now = performance.now();
+      if (beatTime > lastBeatTime) {
+        bassIdx = (bassIdx + 1) % BASS_COLORS.length;
+        midIdx  = (midIdx  + 1) % MID_COLORS.length;
+        highIdx = (highIdx + 1) % HIGH_COLORS.length;
+        lastBeatTime = beatTime;
+        lastIdleRotate = now;
+      } else if (now - lastIdleRotate > 1600) {
+        // Idle drift — keep changing colors slowly if the room is silent.
+        bassIdx = (bassIdx + 1) % BASS_COLORS.length;
+        midIdx  = (midIdx  + 1) % MID_COLORS.length;
+        highIdx = (highIdx + 1) % HIGH_COLORS.length;
+        lastIdleRotate = now;
+      }
+
+      const bC = BASS_COLORS[bassIdx];
+      const mC = MID_COLORS[midIdx];
+      const hC = HIGH_COLORS[highIdx];
+
+      // Weighted mix — the +0.05 floor lets quiet rooms still pick a
+      // color rather than collapsing to black.
+      const wB = bands.bass + 0.05;
+      const wM = bands.mid  + 0.05;
+      const wH = bands.high + 0.05;
+      const total = wB + wM + wH;
+      let tgtR = (bC[0] * wB + mC[0] * wM + hC[0] * wH) / total;
+      let tgtG = (bC[1] * wB + mC[1] * wM + hC[1] * wH) / total;
+      let tgtB = (bC[2] * wB + mC[2] * wM + hC[2] * wH) / total;
+
+      // Brightness follows total energy — keeps quiet rooms dim and loud
+      // rooms saturated.
+      const energy = Math.min(1, (bands.bass + bands.mid + bands.high) * 0.7);
+      const ambient = 0.35 + energy * 0.65;
+      tgtR *= ambient;
+      tgtG *= ambient;
+      tgtB *= ambient;
+
+      // Beat brightness pulse — additive, decays via beatFlash.
+      const flash = beatFlash * 70;
+      tgtR = Math.min(255, tgtR + flash);
+      tgtG = Math.min(255, tgtG + flash);
+      tgtB = Math.min(255, tgtB + flash);
+
+      // LERP. Use a faster catchup on beat frames so transitions still
+      // feel kicky even though we're smoothing.
+      const lerp = 0.08 + beatFlash * 0.18;
+      curR += (tgtR - curR) * lerp;
+      curG += (tgtG - curG) * lerp;
+      curB += (tgtB - curB) * lerp;
+
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
@@ -402,124 +671,23 @@ function DiscoCanvas({ state }) {
         canvas.height = Math.round(h * dpr);
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
 
-      const pulse = state.pulse;
-      const energies = state.bandEnergies;
-      const idx = idxRef.current;
+      ctx.fillStyle = `rgb(${Math.round(curR)},${Math.round(curG)},${Math.round(curB)})`;
+      ctx.fillRect(0, 0, w, h);
 
-      // Rising-edge beat detection: rotate all three indices on each
-      // detected onset. Threshold 0.05, cooldown 50 ms — same tuning
-      // as the Android disco.
-      const now = performance.now();
-      if (idx.prev < 0.05 && pulse >= 0.05 && now - idx.lastBeat > 50) {
-        idx.bass = (idx.bass + 1) % PALETTE.length;
-        idx.mids = (idx.mids + 2) % PALETTE.length;
-        idx.highs = (idx.highs + 3) % PALETTE.length;
-        idx.lastBeat = now;
-      }
-      idx.prev = pulse;
-
-      const colorBass = PALETTE[idx.bass];
-      const colorMids = PALETTE[idx.mids];
-      const colorHighs = PALETTE[idx.highs];
-
-      const bassA = Math.min(1, Math.sqrt(energies.bass * 8));
-      const midsA = Math.min(1, Math.sqrt(energies.mids * 6));
-      const highsA = Math.min(1, Math.sqrt(energies.highs * 6));
-      const ambient = Math.min(1, 0.18 + pulse * 0.55);
-
-      // Layer 1: Bass wash bottom 70%
-      const bassGrad = ctx.createLinearGradient(0, h * 0.3, 0, h);
-      bassGrad.addColorStop(0, hexAlpha(colorBass, bassA * 0.4 + ambient * 0.3));
-      bassGrad.addColorStop(1, hexAlpha(colorBass, Math.min(1, bassA + ambient) * 0.95));
-      ctx.fillStyle = bassGrad;
-      ctx.fillRect(0, h * 0.3, w, h * 0.7);
-
-      // Layer 2: Mids sweep through middle
-      const midsGrad = ctx.createLinearGradient(0, 0, w, 0);
-      midsGrad.addColorStop(0, 'rgba(0,0,0,0)');
-      midsGrad.addColorStop(0.5, hexAlpha(colorMids, Math.min(0.95, midsA + ambient * 0.4)));
-      midsGrad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = midsGrad;
-      ctx.fillRect(0, h * 0.3, w, h * 0.4);
-
-      // Layer 3: Highs wash top 50%
-      const highsGrad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
-      highsGrad.addColorStop(0, hexAlpha(colorHighs, Math.min(0.95, highsA + ambient * 0.5)));
-      highsGrad.addColorStop(1, hexAlpha(colorHighs, highsA * 0.2));
-      ctx.fillStyle = highsGrad;
-      ctx.fillRect(0, 0, w, h * 0.5);
-
-      // Layer 4: Radial center burst on every beat
-      if (pulse > 0.05) {
-        const burstR = Math.max(w, h) * (0.25 + pulse * 0.85);
-        const burst = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, burstR);
-        burst.addColorStop(0, `rgba(255,255,255,${pulse * 0.55})`);
-        burst.addColorStop(0.5, hexAlpha(colorBass, pulse * 0.45));
-        burst.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = burst;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      // Layer 5: side strobes
-      if (pulse > 0.15) {
-        const sideAlpha = Math.min(0.8, (pulse - 0.15) * 1.5);
-        const sideW = w * 0.25;
-        const leftGrad = ctx.createLinearGradient(0, 0, sideW, 0);
-        leftGrad.addColorStop(0, hexAlpha(colorMids, sideAlpha));
-        leftGrad.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = leftGrad;
-        ctx.fillRect(0, 0, sideW, h);
-
-        const rightGrad = ctx.createLinearGradient(w - sideW, 0, w, 0);
-        rightGrad.addColorStop(0, 'rgba(0,0,0,0)');
-        rightGrad.addColorStop(1, hexAlpha(colorHighs, sideAlpha));
-        ctx.fillStyle = rightGrad;
-        ctx.fillRect(w - sideW, 0, sideW, h);
-      }
-
-      // Layer 6: sparkle dots
-      if (energies.highs > 0.01) {
-        const boostedHighs = Math.min(1, Math.sqrt(energies.highs * 5));
-        const dotCount = Math.min(100, Math.floor(boostedHighs * 100));
-        const timeSeed = Math.floor(performance.now() / 60);
-        for (let i = 0; i < dotCount; i++) {
-          const seed = i * 173 + timeSeed;
-          const xN = ((seed * 37) % 100 + 100) % 100 / 100;
-          const yN = ((seed * 91) % 100 + 100) % 100 / 100;
-          ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.85)' : hexAlpha(colorHighs, 0.9);
-          ctx.beginPath();
-          ctx.arc(xN * w, yN * h, 2 + boostedHighs * 5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      // Layer 7: peak strobe
-      if (pulse > 0.25) {
-        ctx.fillStyle = `rgba(255,255,255,${(pulse - 0.25) * 0.5})`;
-        ctx.fillRect(0, 0, w, h);
-      }
+      // Subtle vignette — adds depth without breaking the "one color"
+      // feel. Without it the flat fill reads as a CSS background.
+      const vg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+      vg.addColorStop(0, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.32)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, w, h);
 
       raf = requestAnimationFrame(draw);
     };
-
-    // Idle drift — rotate palette every 1.2 s when nothing's detected
-    // for 1.8 s+. Runs alongside the draw loop.
-    const driftId = setInterval(() => {
-      if (performance.now() - idxRef.current.lastBeat > 1800) {
-        idxRef.current.bass = (idxRef.current.bass + 1) % PALETTE.length;
-        idxRef.current.mids = (idxRef.current.mids + 1) % PALETTE.length;
-        idxRef.current.highs = (idxRef.current.highs + 1) % PALETTE.length;
-      }
-    }, 1200);
-
     raf = requestAnimationFrame(draw);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearInterval(driftId);
-    };
-  }, [state]);
+    return () => cancelAnimationFrame(raf);
+  }, [analyzer]);
 
   return (
     <Box
@@ -528,13 +696,4 @@ function DiscoCanvas({ state }) {
       sx={{ width: '100%', height: '100%', display: 'block' }}
     />
   );
-}
-
-// Tiny helper — turn a hex string like '#FF0066' into 'rgba(255,0,102,A)'.
-function hexAlpha(hex, alpha) {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.substring(0, 2), 16);
-  const g = parseInt(h.substring(2, 4), 16);
-  const b = parseInt(h.substring(4, 6), 16);
-  return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha))})`;
 }

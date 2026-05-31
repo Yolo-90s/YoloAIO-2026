@@ -37,6 +37,7 @@ import { BeatAnalyserScreen } from './features/beat/BeatAnalyserScreen.jsx';
 import { BooksScreen } from './features/books/BooksScreen.jsx';
 import { BookReaderScreen } from './features/books/BookReaderScreen.jsx';
 import { BookFavoritesScreen } from './features/books/BookFavoritesScreen.jsx';
+import { StyleYourselfScreen } from './features/style/StyleYourselfScreen.jsx';
 
 export default function App() {
   return (
@@ -91,6 +92,7 @@ function AppRoutes() {
         <Route path={routes.books} element={<BooksScreen />} />
         <Route path={routes.booksFavorites} element={<BookFavoritesScreen />} />
         <Route path={routes.bookReaderPattern} element={<BookReaderScreen />} />
+        <Route path={routes.styleYourself} element={<StyleYourselfScreen />} />
 
         <Route path="*" element={<Navigate to={routes.home} replace />} />
       </Route>

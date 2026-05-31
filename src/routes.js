@@ -43,4 +43,5 @@ export const routes = {
   videos: '/videos',
   videoEditor: (videoId) => `/videos/${encodeURIComponent(videoId)}`,
   videoEditorPattern: '/videos/:videoId',
+  styleYourself: '/style-yourself',
 };

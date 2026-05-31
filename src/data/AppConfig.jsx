@@ -39,6 +39,22 @@ const defaultConfig = {
   jitsiServerUrl: '',
   showBooksMenu: true,
   showBeatAnalyserMenu: true,
+  showStyleYourselfMenu: true,
+  // Base URL of the Style Yourself proxy that fronts Gemini + Cloudflare
+  // image-edit endpoints. POSTs hit `${styleApiBaseUrl}/api/style-preview`
+  // (Gemini) or `/api/style-preview-cf` (Cloudflare). Same Vercel project
+  // as the music + book proxies — set this to e.g.
+  // https://yoloaio-music-proxy.vercel.app and add GEMINI_API_KEY and/or
+  // CLOUDFLARE_API_TOKEN to the project's env vars.
+  styleApiBaseUrl: '',
+  // 'gemini' (best quality, paid quota past free tier) or 'cloudflare'
+  // (SDXL on Workers AI, 10K neurons/day free, weaker identity preservation).
+  stylePreviewBackend: 'gemini',
+  // Cloudflare account ID — NOT secret; visible in any dashboard URL at
+  // dash.cloudflare.com/<account_id>/.... Required when stylePreviewBackend
+  // is 'cloudflare'. The matching API token lives in the Vercel proxy env
+  // as CLOUDFLARE_API_TOKEN (which IS secret).
+  cloudflareAccountId: '',
   // Cloud Function endpoint for the Gutenberg book proxy. Browsers
   // can't fetch gutenberg.org directly (no CORS, anti-bot UA gate),
   // so the Books reader hits this proxy and forwards the URL.
