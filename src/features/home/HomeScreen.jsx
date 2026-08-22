@@ -16,6 +16,7 @@ import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
 import EqualizerIcon from '@mui/icons-material/Equalizer';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import FaceRetouchingNaturalIcon from '@mui/icons-material/FaceRetouchingNatural';
+import SettingsVoiceIcon from '@mui/icons-material/SettingsVoice';
 import { useAppConfig } from '../../data/AppConfig.jsx';
 import { useCurrentUser } from '../../data/UserSession.jsx';
 import { routes } from '../../routes.js';
@@ -34,6 +35,7 @@ const ALL_TILES = [
   { key: 'videos', title: 'Videos', tagline: 'Edit & share from Drive', icon: VideoLibraryIcon, route: routes.videos, accent: ['#7AD0FF', '#0D47A1'] },
   { key: 'books', title: 'Books', tagline: 'Free classics · read anywhere', icon: MenuBookIcon, route: routes.books, accent: ['#FFB088', '#5D4037'] },
   { key: 'beat_analyser', title: 'Beat Analyser', tagline: 'Noise meter · disco lights', icon: EqualizerIcon, route: routes.beatAnalyser, accent: ['#42E6B4', '#311B92'] },
+  { key: 'walkie_talkie', title: 'Walkie Talkie', tagline: 'Live voice · push to talk', icon: SettingsVoiceIcon, route: routes.walkieTalkie, accent: ['#66BB6A', '#1B5E20'] },
   { key: 'style_yourself', title: 'Style Yourself', tagline: 'Find your perfect hairstyle', icon: FaceRetouchingNaturalIcon, route: routes.styleYourself, accent: ['#FF7AB6', '#5B259F'] },
 ];
 
@@ -52,6 +54,7 @@ export function HomeScreen() {
         if (t.key === 'videos') return config.showVideosMenu;
         if (t.key === 'books') return config.showBooksMenu;
         if (t.key === 'beat_analyser') return config.showBeatAnalyserMenu;
+        if (t.key === 'walkie_talkie') return config.showWalkieTalkieMenu;
         if (t.key === 'style_yourself') return config.showStyleYourselfMenu;
         return true;
       }),

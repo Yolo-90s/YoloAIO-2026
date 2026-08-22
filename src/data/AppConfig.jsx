@@ -39,6 +39,16 @@ const defaultConfig = {
   jitsiServerUrl: '',
   showBooksMenu: true,
   showBeatAnalyserMenu: true,
+  showWalkieTalkieMenu: true,
+  // TURN relay for the raw-WebRTC WalkieTalkie feature (Android side too —
+  // same `config/app` doc). Google's public STUN is always used as a
+  // baseline; these three add a TURN server on top, required for two
+  // devices on different networks to reliably connect. Get a free TURN
+  // endpoint from Metered.ca (or self-host coturn) and set these three in
+  // Firestore `config/app` — no rebuild needed.
+  turnUrl: '',
+  turnUsername: '',
+  turnCredential: '',
   showStyleYourselfMenu: true,
   // Base URL of the Style Yourself proxy that fronts Gemini + Cloudflare
   // image-edit endpoints. POSTs hit `${styleApiBaseUrl}/api/style-preview`

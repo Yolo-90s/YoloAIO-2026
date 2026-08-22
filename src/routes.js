@@ -36,6 +36,7 @@ export const routes = {
   wifiLab: '/wifi-lab',
   community: '/community',
   beatAnalyser: '/beat-analyser',
+  walkieTalkie: '/walkie-talkie',
   books: '/books',
   booksFavorites: '/books/favorites',
   bookReader: (bookId) => `/books/${encodeURIComponent(bookId)}/read`,

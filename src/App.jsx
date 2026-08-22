@@ -36,6 +36,7 @@ import { VideosScreen } from './features/videos/VideosScreen.jsx';
 import { VideoEditorScreen } from './features/videos/VideoEditorScreen.jsx';
 import { FeatureStub } from './features/_stub/FeatureStub.jsx';
 import { BeatAnalyserScreen } from './features/beat/BeatAnalyserScreen.jsx';
+import { WalkieTalkieScreen } from './features/walkietalkie/WalkieTalkieScreen.jsx';
 import { BooksScreen } from './features/books/BooksScreen.jsx';
 import { BookReaderScreen } from './features/books/BookReaderScreen.jsx';
 import { BookFavoritesScreen } from './features/books/BookFavoritesScreen.jsx';
@@ -96,6 +97,7 @@ function AppRoutes() {
         <Route path={routes.wifiLab} element={<FeatureStub title="Wi-Fi Lab" androidOnly />} />
         <Route path={routes.community} element={<CommunityChannelScreen />} />
         <Route path={routes.beatAnalyser} element={<BeatAnalyserScreen />} />
+        <Route path={routes.walkieTalkie} element={<WalkieTalkieScreen />} />
         <Route path={routes.books} element={<BooksScreen />} />
         <Route path={routes.booksFavorites} element={<BookFavoritesScreen />} />
         <Route path={routes.bookReaderPattern} element={<BookReaderScreen />} />
