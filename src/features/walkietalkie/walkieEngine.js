@@ -95,10 +95,6 @@ export class WalkieTalkieEngine {
     const pc = new RTCPeerConnection({ iceServers });
     this.transmitConnections.set(receiverUid, pc);
 
-    this.localStream.getAudioTracks().forEach((track) => {
-      pc.addTransceiver(track, { direction: 'sendonly', streams: [this.localStream] });
-    });
-
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         addIceCandidate(code, receiverUid, 'transmitter', event.candidate.toJSON());
@@ -107,6 +103,17 @@ export class WalkieTalkieEngine {
 
     try {
       await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp });
+      // Attach our mic to the transceiver Unified Plan already created from
+      // the offer's (recvonly) audio m-line — calling addTransceiver() here
+      // instead would add a SECOND, unnegotiated m-line: ICE/DTLS still
+      // connects fine, but no audio ever flows because the
+      // actually-negotiated m-line never gets a track.
+      const track = this.localStream.getAudioTracks()[0];
+      const transceiver = pc.getTransceivers().find((t) => t.receiver.track?.kind === 'audio');
+      if (transceiver && track) {
+        transceiver.direction = 'sendonly';
+        await transceiver.sender.replaceTrack(track);
+      }
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await writeAnswer(code, receiverUid, { sdp: answer.sdp, type: answer.type });
