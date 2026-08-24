@@ -102,7 +102,21 @@ export const darkSurface = {
 };
 
 // Opaque card colors used by GlassCard. Match Glass.kt surfaceColor().
+// Kept for reference/back-compat; GlassCard itself now uses `glassTokens`
+// below (real translucency) instead of these solid fills.
 export const yoloSurfaceColor = {
   normal: '#110D1A',
   strong: '#1B1726',
+};
+
+// Mirrors GlassPalette / DarkGlassFill etc. in Color.kt — same alpha values,
+// so the two platforms' glass surfaces read identically. Palette-neutral
+// (translucency reads consistently regardless of the active accent color,
+// same design choice as the Android GlassPalette).
+export const glassTokens = {
+  fill: 'rgba(255,255,255,0.15)',
+  fillStrong: 'rgba(255,255,255,0.25)',
+  border: 'rgba(255,255,255,0.40)',
+  highlight: 'rgba(255,255,255,0.20)',
+  blurPx: 20,
 };

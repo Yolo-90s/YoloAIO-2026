@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Stack, Typography } from '@mui/material';
-import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 import MovieIcon from '@mui/icons-material/Movie';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import ForumIcon from '@mui/icons-material/Forum';
@@ -20,6 +19,7 @@ import SettingsVoiceIcon from '@mui/icons-material/SettingsVoice';
 import { useAppConfig } from '../../data/AppConfig.jsx';
 import { useCurrentUser } from '../../data/UserSession.jsx';
 import { routes } from '../../routes.js';
+import { BentoTile } from '../../ui/Bento.jsx';
 
 const ALL_TILES = [
   { key: 'movies', title: 'Movies', tagline: 'Stream anywhere, instantly', icon: MovieIcon, route: routes.movies, accent: ['#7C9CFF', '#1A237E'] },
@@ -84,129 +84,29 @@ export function HomeScreen() {
           gap: { xs: 1.75, md: 2.25 },
         }}
       >
-        {tiles[0] && <HeroTile tile={tiles[0]} onClick={() => navigate(tiles[0].route)} />}
-        {tiles.slice(1).map((tile) => (
-          <StandardTile key={tile.key} tile={tile} onClick={() => navigate(tile.route)} />
+        {tiles[0] && (
+          <BentoTile
+            title={tiles[0].title}
+            tagline={tiles[0].tagline}
+            icon={tiles[0].icon}
+            accent={tiles[0].accent}
+            onClick={() => navigate(tiles[0].route)}
+            hero
+            index={0}
+          />
+        )}
+        {tiles.slice(1).map((tile, i) => (
+          <BentoTile
+            key={tile.key}
+            title={tile.title}
+            tagline={tile.tagline}
+            icon={tile.icon}
+            accent={tile.accent}
+            onClick={() => navigate(tile.route)}
+            index={i + 1}
+          />
         ))}
       </Box>
-    </Box>
-  );
-}
-
-function HeroTile({ tile, onClick }) {
-  const Icon = tile.icon;
-  return (
-    <Box
-      onClick={onClick}
-      sx={{
-        gridColumn: 'span 2',
-        position: 'relative',
-        // Hero scales with the grid: small on phone, taller on desktop.
-        // Keeping a min-height so it always feels prominent.
-        minHeight: { xs: 200, md: 260 },
-        aspectRatio: { xs: '2 / 1', md: 'auto' },
-        borderRadius: { xs: '24px', md: '28px' },
-        overflow: 'hidden',
-        background: `linear-gradient(135deg, ${tile.accent[0]} 0%, ${tile.accent[1]} 100%)`,
-        boxShadow: '0 16px 40px rgba(0,0,0,0.32)',
-        cursor: 'pointer',
-        transition: 'transform 200ms ease, box-shadow 200ms ease',
-        '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 22px 48px rgba(0,0,0,0.4)' },
-      }}
-    >
-      <Icon
-        sx={{
-          position: 'absolute',
-          top: { xs: 16, md: 20 },
-          right: { xs: 16, md: 24 },
-          fontSize: { xs: 140, md: 180 },
-          color: 'rgba(255,255,255,0.18)',
-        }}
-      />
-      <Stack sx={{ position: 'absolute', inset: 0, p: { xs: 3, md: 4 }, justifyContent: 'space-between', color: '#fff' }}>
-        <Stack direction="row" alignItems="center" spacing={1.25}>
-          <Box
-            sx={{
-              width: 44,
-              height: 44,
-              borderRadius: '14px',
-              background: 'rgba(255,255,255,0.20)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Icon sx={{ fontSize: 24 }} />
-          </Box>
-          <Typography variant="caption" sx={{ opacity: 0.85, fontWeight: 600 }}>
-            Featured
-          </Typography>
-        </Stack>
-        <Stack>
-          <Typography variant="h3" sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '2rem', md: '2.5rem' } }}>
-            {tile.title}
-          </Typography>
-          <Stack direction="row" alignItems="center" sx={{ mt: 0.5 }}>
-            <Typography variant="body1" sx={{ flex: 1, opacity: 0.85 }}>
-              {tile.tagline}
-            </Typography>
-            <ArrowOutwardIcon sx={{ fontSize: 22 }} />
-          </Stack>
-        </Stack>
-      </Stack>
-    </Box>
-  );
-}
-
-function StandardTile({ tile, onClick }) {
-  const Icon = tile.icon;
-  return (
-    <Box
-      onClick={onClick}
-      sx={{
-        position: 'relative',
-        aspectRatio: '1 / 1',
-        borderRadius: '20px',
-        overflow: 'hidden',
-        background: `linear-gradient(135deg, ${tile.accent[0]} 0%, ${tile.accent[1]} 100%)`,
-        boxShadow: '0 10px 24px rgba(0,0,0,0.26)',
-        cursor: 'pointer',
-        transition: 'transform 200ms ease, box-shadow 200ms ease',
-        '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 16px 32px rgba(0,0,0,0.34)' },
-      }}
-    >
-      <Icon
-        sx={{
-          position: 'absolute',
-          top: 12,
-          right: 12,
-          fontSize: { xs: 80, md: 100 },
-          color: 'rgba(255,255,255,0.16)',
-        }}
-      />
-      <Stack sx={{ position: 'absolute', inset: 0, p: { xs: 2, md: 2.5 }, justifyContent: 'space-between', color: '#fff' }}>
-        <Box
-          sx={{
-            width: 36,
-            height: 36,
-            borderRadius: '11px',
-            background: 'rgba(255,255,255,0.20)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Icon sx={{ fontSize: 20 }} />
-        </Box>
-        <Stack>
-          <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 700 }}>
-            {tile.title}
-          </Typography>
-          <Typography variant="caption" sx={{ opacity: 0.85 }}>
-            {tile.tagline}
-          </Typography>
-        </Stack>
-      </Stack>
     </Box>
   );
 }
