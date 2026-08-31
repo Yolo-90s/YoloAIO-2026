@@ -28,6 +28,10 @@ export class WalkieTalkieEngine {
   constructor() {
     this.localStream = null;
     this.transmitConnections = new Map(); // receiverUid -> RTCPeerConnection
+    // receiverUid -> was this session opened by an admin browsing live
+    // channels (session doc's isAdminMonitor)? Excluded from the listener
+    // count shown to the transmitter — see _nonAdminListenerCount().
+    this.adminMonitorFlags = new Map();
     this.receiveConnection = null;
     this.unsubscribers = [];
     this.heartbeatTimer = null;
@@ -49,6 +53,14 @@ export class WalkieTalkieEngine {
 
   _uid() {
     return auth?.currentUser?.uid ?? null;
+  }
+
+  _nonAdminListenerCount() {
+    let count = 0;
+    this.transmitConnections.forEach((_pc, receiverUid) => {
+      if (!this.adminMonitorFlags.get(receiverUid)) count += 1;
+    });
+    return count;
   }
 
   // ── Transmit ───────────────────────────────────────────────────────────
@@ -77,14 +89,16 @@ export class WalkieTalkieEngine {
       changes.forEach((change) => {
         const receiverUid = change.doc.id;
         if (change.type === 'added' || change.type === 'modified') {
-          if (this.transmitConnections.has(receiverUid)) return;
           const data = change.doc.data();
+          this.adminMonitorFlags.set(receiverUid, Boolean(data?.isAdminMonitor));
+          if (this.transmitConnections.has(receiverUid)) return;
           if (!data?.offer) return;
           this._answerReceiver(code, receiverUid, data.offer, iceServers);
         } else if (change.type === 'removed') {
           this.transmitConnections.get(receiverUid)?.close();
           this.transmitConnections.delete(receiverUid);
-          this._setStatus({ kind: 'live', listenerCount: this.transmitConnections.size });
+          this.adminMonitorFlags.delete(receiverUid);
+          this._setStatus({ kind: 'live', listenerCount: this._nonAdminListenerCount() });
         }
       });
     });
@@ -117,7 +131,7 @@ export class WalkieTalkieEngine {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await writeAnswer(code, receiverUid, { sdp: answer.sdp, type: answer.type });
-      this._setStatus({ kind: 'live', listenerCount: this.transmitConnections.size });
+      this._setStatus({ kind: 'live', listenerCount: this._nonAdminListenerCount() });
 
       const unsub = observeIceCandidates(code, receiverUid, 'receiver', (candidates) => {
         candidates.forEach((c) => {
@@ -128,12 +142,13 @@ export class WalkieTalkieEngine {
     } catch {
       pc.close();
       this.transmitConnections.delete(receiverUid);
+      this.adminMonitorFlags.delete(receiverUid);
     }
   }
 
   // ── Receive ────────────────────────────────────────────────────────────
 
-  async startReceive(code, iceServers) {
+  async startReceive(code, iceServers, isAdminMonitor = false) {
     this.stop();
     const me = this._uid();
     if (!me) {
@@ -184,7 +199,7 @@ export class WalkieTalkieEngine {
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      await writeOffer(code, me, { sdp: offer.sdp, type: offer.type });
+      await writeOffer(code, me, { sdp: offer.sdp, type: offer.type }, isAdminMonitor);
 
       let answered = false;
       const unsubSession = observeSession(code, me, (session) => {
@@ -223,6 +238,7 @@ export class WalkieTalkieEngine {
 
     this.transmitConnections.forEach((pc) => pc.close());
     this.transmitConnections.clear();
+    this.adminMonitorFlags.clear();
     this.receiveConnection?.close();
     this.receiveConnection = null;
 

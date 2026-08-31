@@ -12,9 +12,17 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CallMadeIcon from '@mui/icons-material/CallMade';
 import CallReceivedIcon from '@mui/icons-material/CallReceived';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import HeadsetIcon from '@mui/icons-material/Headset';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
+import { GlassCard } from '../../ui/GlassCard.jsx';
 import { useAppConfig } from '../../data/AppConfig.jsx';
-import { ensureChannelCode, refreshChannelCode } from './walkieRepository.js';
+import {
+  ensureChannelCode,
+  isCurrentUserAdmin,
+  observeLiveChannels,
+  refreshChannelCode,
+} from './walkieRepository.js';
 import { formatChannelCode, normalizeChannelCode } from './walkieChannelId.js';
 import { WalkieTalkieEngine } from './walkieEngine.js';
 
@@ -30,6 +38,8 @@ export function WalkieTalkieScreen() {
   const [peerCodeInput, setPeerCodeInput] = useState('');
   const [role, setRole] = useState(null); // 'transmit' | 'receive' | null
   const [status, setStatus] = useState({ kind: 'idle' });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [liveChannels, setLiveChannels] = useState([]);
 
   const audioRef = useRef(null);
   const engineRef = useRef(null);
@@ -56,6 +66,27 @@ export function WalkieTalkieScreen() {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    isCurrentUserAdmin().then((admin) => {
+      if (alive) setIsAdmin(admin);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Only subscribed while isAdmin — a non-admin would just have this
+  // listener fail against firestore.rules' `allow list: if isAdmin()`
+  // anyway, but there's no reason to even try.
+  useEffect(() => {
+    if (!isAdmin) {
+      setLiveChannels([]);
+      return undefined;
+    }
+    return observeLiveChannels(setLiveChannels);
+  }, [isAdmin]);
 
   const iceServers = useMemo(() => {
     const servers = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -107,6 +138,16 @@ export function WalkieTalkieScreen() {
       // keep showing the old code on failure
     }
     setRefreshing(false);
+  };
+
+  // Admin-only: tune into a channel discovered via the live-channels list
+  // instead of a manually entered code. Marked isAdminMonitor so the
+  // transmitter's own listener count doesn't reflect this session.
+  const onAdminListenTap = async (channel) => {
+    stopActive();
+    setPeerCodeInput(channel.code);
+    setRole('receive');
+    await engine.startReceive(channel.code, iceServers, true);
   };
 
   return (
@@ -175,10 +216,50 @@ export function WalkieTalkieScreen() {
           {statusText(status)}
         </Typography>
 
+        {isAdmin && (
+          <AdminLiveChannelsSection channels={liveChannels} onListen={onAdminListenTap} />
+        )}
+
         {/* Hidden audio sink the engine attaches the received stream to. */}
         <audio ref={audioRef} autoPlay style={{ display: 'none' }} />
       </Stack>
     </FeatureScaffold>
+  );
+}
+
+function AdminLiveChannelsSection({ channels, onListen }) {
+  return (
+    <Stack spacing={1}>
+      <Stack direction="row" alignItems="center" spacing={1}>
+        <AdminPanelSettingsIcon color="primary" sx={{ fontSize: 20 }} />
+        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+          Live channels (admin)
+        </Typography>
+      </Stack>
+      {channels.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          No one else is currently transmitting.
+        </Typography>
+      ) : (
+        <Stack spacing={1}>
+          {channels.map((channel) => (
+            <GlassCard key={channel.code} onClick={() => onListen(channel)} contentPadding={1.5}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between">
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    {channel.ownerDisplayName}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {formatChannelCode(channel.code)}
+                  </Typography>
+                </Box>
+                <HeadsetIcon />
+              </Stack>
+            </GlassCard>
+          ))}
+        </Stack>
+      )}
+    </Stack>
   );
 }
 

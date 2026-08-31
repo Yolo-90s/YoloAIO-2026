@@ -6,9 +6,11 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import { auth, firestore } from '../../data/firebase.js';
@@ -78,7 +80,12 @@ async function claimNewCode(uid) {
       await runTransaction(firestore, async (tx) => {
         const snap = await tx.get(ref);
         if (snap.exists()) throw new Error('taken');
-        tx.set(ref, { ownerUid: uid, createdAt: serverTimestamp(), live: false });
+        tx.set(ref, {
+          ownerUid: uid,
+          ownerDisplayName: auth.currentUser?.displayName?.trim() || 'Unknown',
+          createdAt: serverTimestamp(),
+          live: false,
+        });
       });
       // eslint-disable-next-line no-await-in-loop
       await setDoc(doc(firestore, 'users', uid), { walkieId: code }, { merge: true });
@@ -103,6 +110,50 @@ export async function fetchChannel(code) {
   return snap.exists() ? snap.data() : null;
 }
 
+/**
+ * True if the signed-in user's own `users/{uid}` doc has an admin role —
+ * mirrors the `isAdmin()` check in firestore.rules exactly (`role in
+ * ['admin','developer']`), so this is a UI-convenience read, not the
+ * actual security boundary (the rules enforce that on their own
+ * regardless of what this returns).
+ */
+export async function isCurrentUserAdmin() {
+  const me = currentUid();
+  if (!me) return false;
+  try {
+    const snap = await getDoc(doc(firestore, 'users', me));
+    const role = snap.exists() ? snap.data()?.role : null;
+    return role === 'admin' || role === 'developer';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Admin-only (enforced by firestore.rules `allow list`): every channel
+ * currently marked `live`, across all users — lets an admin pick a
+ * broadcast to listen to without needing its code. Excludes the admin's
+ * own channel, if it happens to be live.
+ */
+export function observeLiveChannels(onChange) {
+  const me = currentUid();
+  const q = query(collection(firestore, 'walkieChannels'), where('live', '==', true));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const channels = snap.docs
+        .filter((d) => d.data()?.ownerUid !== me)
+        .map((d) => ({
+          code: d.id,
+          ownerUid: d.data()?.ownerUid ?? '',
+          ownerDisplayName: d.data()?.ownerDisplayName?.trim() || 'Unknown',
+        }));
+      onChange(channels);
+    },
+    () => onChange([])
+  );
+}
+
 /** Transmitter side: fires raw doc changes whenever a receiver's session doc is added/changed/removed. */
 export function observeSessions(code, onChange) {
   return onSnapshot(sessionsCol(code), (snap) => {
@@ -117,10 +168,11 @@ export function observeSession(code, receiverUid, onChange) {
   });
 }
 
-export async function writeOffer(code, receiverUid, offer) {
+export async function writeOffer(code, receiverUid, offer, isAdminMonitor = false) {
   await setDoc(sessionRef(code, receiverUid), {
     offer: { sdp: offer.sdp, type: offer.type },
     createdAt: serverTimestamp(),
+    isAdminMonitor,
   });
 }
 

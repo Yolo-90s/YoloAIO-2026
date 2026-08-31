@@ -52,6 +52,51 @@ export function YoloThemeProvider({ children }) {
           body2: { fontSize: '0.875rem', lineHeight: 1.43 },
           button: { textTransform: 'none', fontWeight: 600 },
         },
+        // Layered-depth "3D button" language, applied globally — the
+        // theme had zero component overrides before this, so every
+        // Button/IconButton across all 15 feature folders picks this up
+        // for free, no per-screen edits needed (mirrors the paired
+        // light/dark shadow trick BentoTile/GlassCard use, as one static
+        // CSS treatment instead of a per-instance framer-motion component
+        // since this needs to apply everywhere, not just hand-picked
+        // spots). Only `contained` buttons get the heavy shadow — it'd
+        // look wrong on a bordered/transparent outlined or text button.
+        components: {
+          MuiButton: {
+            styleOverrides: {
+              root: {
+                transition: 'transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 160ms ease',
+              },
+            },
+            variants: [
+              {
+                props: { variant: 'contained' },
+                style: {
+                  boxShadow:
+                    '0 6px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.25)',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow:
+                      '0 10px 22px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(0,0,0,0.25)',
+                  },
+                  '&:active': {
+                    transform: 'translateY(1px) scale(0.97)',
+                    boxShadow: '0 3px 8px rgba(0,0,0,0.3), inset 0 1px 2px rgba(0,0,0,0.3)',
+                  },
+                },
+              },
+            ],
+          },
+          MuiIconButton: {
+            styleOverrides: {
+              root: {
+                transition: 'transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                '&:hover': { transform: 'translateY(-1px)' },
+                '&:active': { transform: 'translateY(1px) scale(0.92)' },
+              },
+            },
+          },
+        },
       }),
     [palette]
   );

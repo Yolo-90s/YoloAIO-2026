@@ -1,6 +1,11 @@
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform } from 'framer-motion';
 import { Box, Stack, Typography } from '@mui/material';
 import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
+
+// Scoped to bento-tile headline text only — NOT a global Typography
+// override, since a drop-shadow on body/reading text (chat, books, forms)
+// would hurt legibility rather than help "attractiveness."
+const TITLE_TEXT_SHADOW = '0 2px 6px rgba(0,0,0,0.35)';
 
 // The app's bento-grid tile — a vivid gradient-fill card with a soft
 // top-edge "glass sheen" highlight (ties it into the same Liquid-Glass
@@ -17,15 +22,41 @@ import ArrowOutwardIcon from '@mui/icons-material/ArrowOutward';
 // `index` staggers the entrance animation — pass the item's position in
 // its grid/list.
 export function BentoTile({ title, tagline, icon: Icon, accent, onClick, hero = false, index = 0 }) {
+  // Pointer-tracked 3D tilt — the single biggest lever for "looks like a
+  // 3D render." Raw motion values driven by mouse position, composed
+  // directly alongside the existing animate/whileHover/whileTap transforms
+  // below (framer-motion merges all active transform channels into one
+  // CSS transform regardless of source, so this doesn't fight the
+  // entrance/hover/tap animations already on this element). Never fires
+  // on touch, so touch devices simply keep the existing whileTap feedback.
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const maxTiltDeg = hero ? 5 : 7;
+  const rotateX = useTransform(pointerY, [-0.5, 0.5], [maxTiltDeg, -maxTiltDeg]);
+  const rotateY = useTransform(pointerX, [-0.5, 0.5], [-maxTiltDeg, maxTiltDeg]);
+
+  const handlePointerMove = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    pointerX.set((e.clientX - rect.left) / rect.width - 0.5);
+    pointerY.set((e.clientY - rect.top) / rect.height - 0.5);
+  };
+  const handlePointerLeave = () => {
+    pointerX.set(0);
+    pointerY.set(0);
+  };
+
   return (
     <Box
       component={motion.div}
       onClick={onClick}
+      onMouseMove={handlePointerMove}
+      onMouseLeave={handlePointerLeave}
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.42, delay: index * 0.04, ease: [0.34, 1.56, 0.64, 1] }}
       whileHover={{ y: -4, scale: 1.015 }}
       whileTap={{ scale: 0.96 }}
+      style={{ rotateX, rotateY, transformPerspective: 800 }}
       sx={{
         gridColumn: hero ? 'span 2' : undefined,
         position: 'relative',
@@ -47,6 +78,16 @@ export function BentoTile({ title, tagline, icon: Icon, accent, onClick, hero = 
           position: 'absolute',
           inset: 0,
           background: 'linear-gradient(180deg, rgba(255,255,255,0.20) 0%, transparent 55%)',
+        }}
+      />
+      {/* Bottom-edge inner shadow — paired with the highlight above, this
+          is what reads as "the surface curves away from the light"
+          (embossed/extruded) instead of "flat card, shadow behind it." */}
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(0deg, rgba(0,0,0,0.22) 0%, transparent 45%)',
         }}
       />
 
@@ -78,7 +119,10 @@ export function BentoTile({ title, tagline, icon: Icon, accent, onClick, hero = 
               </Typography>
             </Stack>
             <Stack>
-              <Typography variant="h3" sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '2rem', md: '2.5rem' } }}>
+              <Typography
+                variant="h3"
+                sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '2rem', md: '2.5rem' }, textShadow: TITLE_TEXT_SHADOW }}
+              >
                 {title}
               </Typography>
               <Stack direction="row" alignItems="center" sx={{ mt: 0.5 }}>
@@ -93,7 +137,7 @@ export function BentoTile({ title, tagline, icon: Icon, accent, onClick, hero = 
           <>
             <IconChip Icon={Icon} size={36} iconSize={20} />
             <Stack>
-              <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 700 }}>
+              <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 700, textShadow: TITLE_TEXT_SHADOW }}>
                 {title}
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.85 }}>
