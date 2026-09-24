@@ -74,10 +74,18 @@ export function YoloThemeProvider({ children }) {
                 style: {
                   boxShadow:
                     '0 6px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.25)',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow:
-                      '0 10px 22px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(0,0,0,0.25)',
+                  // Real hover (mouse/trackpad) only — on touchscreens
+                  // there's no genuine hover state, and `:hover` can get
+                  // "stuck" applied after a tap until something else is
+                  // touched, which read as buttons staying visibly
+                  // shifted/lifted after every tap (worst on something
+                  // tapped as repeatedly as Music's mini-player controls).
+                  '@media (hover: hover)': {
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow:
+                        '0 10px 22px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(0,0,0,0.25)',
+                    },
                   },
                   '&:active': {
                     transform: 'translateY(1px) scale(0.97)',
@@ -91,7 +99,10 @@ export function YoloThemeProvider({ children }) {
             styleOverrides: {
               root: {
                 transition: 'transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                '&:hover': { transform: 'translateY(-1px)' },
+                // Same real-hover-only gating as MuiButton above.
+                '@media (hover: hover)': {
+                  '&:hover': { transform: 'translateY(-1px)' },
+                },
                 '&:active': { transform: 'translateY(1px) scale(0.92)' },
               },
             },
