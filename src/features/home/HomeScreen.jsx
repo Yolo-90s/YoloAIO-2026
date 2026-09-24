@@ -16,12 +16,15 @@ import EqualizerIcon from '@mui/icons-material/Equalizer';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import FaceRetouchingNaturalIcon from '@mui/icons-material/FaceRetouchingNatural';
 import SettingsVoiceIcon from '@mui/icons-material/SettingsVoice';
-import { useAppConfig } from '../../data/AppConfig.jsx';
+import { minRoleFor, useAppConfig } from '../../data/AppConfig.jsx';
 import { useCurrentUser } from '../../data/UserSession.jsx';
+import { roleAtLeast, useUserRole } from '../../data/UserRole.jsx';
 import { routes } from '../../routes.js';
 import { BentoTile } from '../../ui/Bento.jsx';
 
-const ALL_TILES = [
+// Exported so SettingsScreen's "Menu Access" admin panel can reuse this
+// exact key/title list instead of keeping a second one.
+export const ALL_TILES = [
   { key: 'movies', title: 'Movies', tagline: 'Stream anywhere, instantly', icon: MovieIcon, route: routes.movies, accent: ['#7C9CFF', '#1A237E'] },
   { key: 'music', title: 'Music', tagline: 'Your library', icon: LibraryMusicIcon, route: routes.music, accent: ['#FF9F73', '#E65100'] },
   { key: 'chat', title: 'Chat', tagline: 'Conversations', icon: ForumIcon, route: routes.chat, accent: ['#5A8DEE', '#3F61C7'] },
@@ -42,23 +45,31 @@ const ALL_TILES = [
 export function HomeScreen() {
   const navigate = useNavigate();
   const config = useAppConfig();
+  const role = useUserRole();
   const { user } = useCurrentUser();
 
   const tiles = useMemo(
     () =>
       ALL_TILES.filter((t) => {
-        if (t.key === 'music') return config.showMusicMenu;
-        if (t.key === 'movies') return config.showMoviesMenu;
-        if (t.key === 'wallpaper') return config.showWallpapersMenu;
-        if (t.key === 'weather') return config.showWeatherMenu;
-        if (t.key === 'videos') return config.showVideosMenu;
-        if (t.key === 'books') return config.showBooksMenu;
-        if (t.key === 'beat_analyser') return config.showBeatAnalyserMenu;
-        if (t.key === 'walkie_talkie') return config.showWalkieTalkieMenu;
-        if (t.key === 'style_yourself') return config.showStyleYourselfMenu;
-        return true;
+        const globallyEnabled = (() => {
+          if (t.key === 'music') return config.showMusicMenu;
+          if (t.key === 'movies') return config.showMoviesMenu;
+          if (t.key === 'wallpaper') return config.showWallpapersMenu;
+          if (t.key === 'weather') return config.showWeatherMenu;
+          if (t.key === 'videos') return config.showVideosMenu;
+          if (t.key === 'books') return config.showBooksMenu;
+          if (t.key === 'beat_analyser') return config.showBeatAnalyserMenu;
+          if (t.key === 'walkie_talkie') return config.showWalkieTalkieMenu;
+          if (t.key === 'style_yourself') return config.showStyleYourselfMenu;
+          return true;
+        })();
+        if (!globallyEnabled) return false;
+        // ADMIN/DEVELOPER always see every enabled menu, by design — the
+        // per-role visibility matrix (config.menuMinRole, admin-editable
+        // from Settings) only ever restricts GUEST/USER.
+        return roleAtLeast(role, 'admin') || roleAtLeast(role, minRoleFor(config, t.key));
       }),
-    [config]
+    [config, role]
   );
 
   const firstName = (user?.displayName?.trim() || 'Friend').split(' ')[0];

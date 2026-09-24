@@ -7,6 +7,7 @@ import { AppShell } from './ui/AppShell.jsx';
 import { LaunchAnimation } from './ui/LaunchAnimation.jsx';
 import { UserSessionProvider, useCurrentUser } from './data/UserSession.jsx';
 import { AppConfigProvider } from './data/AppConfig.jsx';
+import { RoleProvider } from './data/UserRole.jsx';
 import { routes } from './routes.js';
 import { AuthScreen } from './features/auth/AuthScreen.jsx';
 import { HomeScreen } from './features/home/HomeScreen.jsx';
@@ -50,11 +51,13 @@ export default function App() {
   return (
     <YoloThemeProvider>
       <UserSessionProvider>
-        <AppConfigProvider>
-          <AppBackground>
-            <AppRoutes />
-          </AppBackground>
-        </AppConfigProvider>
+        <RoleProvider>
+          <AppConfigProvider>
+            <AppBackground>
+              <AppRoutes />
+            </AppBackground>
+          </AppConfigProvider>
+        </RoleProvider>
       </UserSessionProvider>
       {!splashDone && <LaunchAnimation onComplete={() => setSplashDone(true)} />}
     </YoloThemeProvider>

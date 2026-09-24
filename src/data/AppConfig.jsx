@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { firestore, firebaseReady } from './firebase.js';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { auth, firestore, firebaseReady } from './firebase.js';
+import { normalizeRole } from './UserRole.jsx';
 
 // Mirrors AppConfig.kt / AppConfigRepository.kt — a single Firestore doc
 // holding remote feature flags + API keys. When Firebase isn't configured
@@ -70,29 +72,93 @@ const defaultConfig = {
   // so the Books reader hits this proxy and forwards the URL.
   // See functions/index.js → bookProxy.
   booksApiBaseUrl: '',
+  // Minimum role (by ROLES value: "guest"/"user"/"admin") required to see
+  // each Home menu tile, keyed by the tile's `key` (see ALL_TILES in
+  // HomeScreen.jsx). Admin-editable from Settings → Menu Access. A key
+  // absent from this map falls back to DEFAULT_MIN_ROLE, then "user".
+  // ADMIN/DEVELOPER always see every tile regardless — see minRoleFor's
+  // callers in HomeScreen.jsx.
+  menuMinRole: {},
 };
+
+// Menus that don't follow the blanket "USER sees everything else"
+// default: the basics stay open to GUEST. (Nothing on web needs an
+// admin-only default the way Android's experimental 3D Menu does.)
+const DEFAULT_MIN_ROLE = {
+  movies: 'guest',
+  music: 'guest',
+  chat: 'guest',
+};
+
+/** The minimum role required to see the Home tile with this key. */
+export function minRoleFor(config, key) {
+  const configured = config.menuMinRole?.[key];
+  if (configured) return normalizeRole(configured);
+  return DEFAULT_MIN_ROLE[key] ?? 'user';
+}
+
+/**
+ * Sets the minimum role required to see one Home menu tile. Uses a dotted
+ * field-path update (`menuMinRole.<key>`) rather than
+ * `setDoc(..., { merge: true })` — Firestore's merge replaces a nested map
+ * field wholesale, which would wipe out every other tile's setting;
+ * `updateDoc` with a dotted key touches only that one nested field.
+ * Requires the caller to be an admin — enforced by firestore.rules
+ * (`allow write: if isAdmin()` on `config/{doc}`), not just by this
+ * function being hidden from non-admins in the UI.
+ */
+export async function setMenuMinRole(key, role) {
+  await updateDoc(doc(firestore, 'config', 'app'), { [`menuMinRole.${key}`]: role });
+}
 
 const AppConfigContext = createContext(defaultConfig);
 
 export function AppConfigProvider({ children }) {
   const [config, setConfig] = useState(defaultConfig);
 
+  // `config/app` requires isSignedIn() per firestore.rules, but Firebase
+  // Auth's persisted-session restoration is itself async — subscribing to
+  // the doc unconditionally on mount can race it: attach before auth
+  // resolves, get a permission-denied, and — since onSnapshot doesn't
+  // retry itself after an error — stay stuck on `defaultConfig` (blank
+  // API keys) for the rest of the page load. That's exactly what showed
+  // up as "TMDB key missing" etc. despite the key being set, and only
+  // "most of the time" since it depends on how slow that particular load
+  // was. Fix: only (re)attach the doc listener once onAuthStateChanged
+  // confirms a signed-in user; detach and reset to defaults on sign-out.
   useEffect(() => {
-    if (!firebaseReady) return;
-    const ref = doc(firestore, 'config', 'app');
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists()) {
-          setConfig({ ...defaultConfig, ...snap.data() });
-        }
-      },
-      () => {
-        // Firestore rules may block this for signed-out users; that's fine,
-        // defaults are already in state.
+    if (!firebaseReady) return undefined;
+
+    let unsubDoc = null;
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      unsubDoc?.();
+      unsubDoc = null;
+
+      if (!user) {
+        setConfig(defaultConfig);
+        return;
       }
-    );
-    return unsub;
+
+      const ref = doc(firestore, 'config', 'app');
+      unsubDoc = onSnapshot(
+        ref,
+        (snap) => {
+          if (snap.exists()) {
+            setConfig({ ...defaultConfig, ...snap.data() });
+          }
+        },
+        (err) => {
+          // A genuine post-attachment error (rare network blip) — keep
+          // whatever config we already have rather than blanking it out.
+          console.warn('config/app listen failed:', err);
+        }
+      );
+    });
+
+    return () => {
+      unsubDoc?.();
+      unsubAuth();
+    };
   }, []);
 
   return <AppConfigContext.Provider value={config}>{children}</AppConfigContext.Provider>;

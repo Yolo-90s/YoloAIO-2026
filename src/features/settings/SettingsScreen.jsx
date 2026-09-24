@@ -12,6 +12,8 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
@@ -29,6 +31,9 @@ import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
 import { GlassCard } from '../../ui/GlassCard.jsx';
 import { IconBadge } from '../../ui/IconBadge.jsx';
 import { useCurrentUser } from '../../data/UserSession.jsx';
+import { useUserRole, roleAtLeast } from '../../data/UserRole.jsx';
+import { minRoleFor, setMenuMinRole, useAppConfig } from '../../data/AppConfig.jsx';
+import { ALL_TILES } from '../home/HomeScreen.jsx';
 import { computeInitials } from '../../data/userProfile.js';
 import { useYoloPalette } from '../../theme/ThemeProvider.jsx';
 import { palettes } from '../../theme/palettes.js';
@@ -44,6 +49,8 @@ import {
 export function SettingsScreen() {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
+  const role = useUserRole();
+  const config = useAppConfig();
   const [notifications, setNotificationsState] = useState(() => getNotificationsEnabledPref());
 
   // Reflect a permission revoke that happens outside this tab.
@@ -138,6 +145,13 @@ export function SettingsScreen() {
           />
         </GlassCard>
 
+        {roleAtLeast(role, 'admin') && (
+          <>
+            <SectionLabel>Menu Access</SectionLabel>
+            <MenuAccessSection config={config} />
+          </>
+        )}
+
         <SectionLabel>Appearance</SectionLabel>
         <AppearanceCard />
 
@@ -218,6 +232,65 @@ function SectionLabel({ children }) {
     >
       {children}
     </Typography>
+  );
+}
+
+const MENU_ACCESS_OPTIONS = [
+  { value: 'guest', label: 'Everyone' },
+  { value: 'user', label: 'Members' },
+  { value: 'admin', label: 'Admins only' },
+];
+
+/**
+ * Admin-only: who can see each Home menu tile. "guest"/"user"/"admin"
+ * here are "minimum role required" — picking "Members" means USER-and-
+ * above can see it (ADMIN/DEVELOPER always can, regardless of this
+ * screen, so there's no "Admins can't see this" footgun). Writes go
+ * straight to Firestore (config/app.menuMinRole.<key>) and every signed-in
+ * device picks up the change live via the existing config listener — no
+ * redeploy.
+ */
+function MenuAccessSection({ config }) {
+  return (
+    <GlassCard contentPadding={0}>
+      <Stack divider={<DividerLine />}>
+        {ALL_TILES.map((tile) => (
+          <MenuAccessRow
+            key={tile.key}
+            tile={tile}
+            current={minRoleFor(config, tile.key)}
+            onSelect={(next) => setMenuMinRole(tile.key, next)}
+          />
+        ))}
+      </Stack>
+    </GlassCard>
+  );
+}
+
+function MenuAccessRow({ tile, current, onSelect }) {
+  const Icon = tile.icon;
+  return (
+    <Box sx={{ px: 2, py: 1.5 }}>
+      <Stack direction="row" alignItems="center" spacing={1.75} sx={{ mb: 1 }}>
+        <IconBadge icon={<Icon />} colors={tile.accent} />
+        <Typography variant="body1" sx={{ flex: 1 }}>
+          {tile.title}
+        </Typography>
+      </Stack>
+      <ToggleButtonGroup
+        value={current}
+        exclusive
+        fullWidth
+        size="small"
+        onChange={(_e, next) => next && onSelect(next)}
+      >
+        {MENU_ACCESS_OPTIONS.map((opt) => (
+          <ToggleButton key={opt.value} value={opt.value} sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+            {opt.label}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
+    </Box>
   );
 }
 
