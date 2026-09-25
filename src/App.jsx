@@ -15,6 +15,8 @@ import { SettingsScreen } from './features/settings/SettingsScreen.jsx';
 import { PrivacyScreen } from './features/settings/PrivacyScreen.jsx';
 import { ChatScreen } from './features/chat/ChatScreen.jsx';
 import { ChatConversationScreen } from './features/chat/ChatConversationScreen.jsx';
+import { GroupChatScreen } from './features/chat/GroupChatScreen.jsx';
+import { GroupInfoScreen } from './features/chat/GroupInfoScreen.jsx';
 import { UserProfileScreen } from './features/chat/UserProfileScreen.jsx';
 import { ChatNotificationsBoot } from './features/chat/ChatNotificationsBoot.jsx';
 import { CommunityChannelScreen } from './features/community/CommunityChannelScreen.jsx';
@@ -85,6 +87,8 @@ function AppRoutes() {
         <Route path={routes.music} element={<MusicScreen />} />
         <Route path={routes.chat} element={<ChatScreen />} />
         <Route path={routes.chatConversationPattern} element={<ChatConversationScreen />} />
+        <Route path={routes.groupInfoPattern} element={<GroupInfoScreen />} />
+        <Route path={routes.groupPattern} element={<GroupChatScreen />} />
         <Route path={routes.userProfilePattern} element={<UserProfileScreen />} />
         <Route path={routes.weather} element={<WeatherScreen />} />
         <Route path={routes.wallpaper} element={<WallpaperScreen />} />

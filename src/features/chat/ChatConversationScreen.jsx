@@ -11,15 +11,10 @@ import {
   IconButton,
   Popover,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import SendIcon from '@mui/icons-material/Send';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
-import GifIcon from '@mui/icons-material/Gif';
-import ImageIcon from '@mui/icons-material/Image';
 import CallIcon from '@mui/icons-material/Call';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import { auth } from '../../data/firebase.js';
@@ -29,22 +24,17 @@ import { setActiveChatPartnerUid } from './chatNotifications.js';
 import { computeInitials, avatarColorToCss } from '../../data/userProfile.js';
 import {
   observeMessages,
+  observeChatDoc,
   fetchUser,
   sendText,
   sendMedia,
   deleteChat,
-  MSG_TEXT,
   MSG_IMAGE,
   MSG_GIF,
-  formatMessageTime,
 } from './chatRepository.js';
+import { markChatRead, toggleReaction } from './chatInteractions.js';
+import { MessageBubble, InputBar, ReplyComposerStrip, EmojiGrid, LoadingShell } from './ChatMessageComponents.jsx';
 import { routes } from '../../routes.js';
-
-const EMOJI_SET = [
-  '😀', '😂', '🥹', '😍', '😎', '🤔', '🙃', '😴',
-  '👍', '🙏', '👏', '🔥', '🎉', '💯', '❤️', '💜',
-  '🚀', '✨', '⭐', '🌈', '☕', '🍕', '🎵', '📸',
-];
 
 export function ChatConversationScreen() {
   const navigate = useNavigate();
@@ -54,7 +44,9 @@ export function ChatConversationScreen() {
   const [other, setOther] = useState(null);
   const [otherLoading, setOtherLoading] = useState(true);
   const [messages, setMessages] = useState([]);
+  const [chatDoc, setChatDoc] = useState(null);
   const [draft, setDraft] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -65,7 +57,6 @@ export function ChatConversationScreen() {
   const imageInputRef = useRef(null);
   const gifInputRef = useRef(null);
   const listRef = useRef(null);
-  const draftRef = useRef('');
 
   useEffect(() => {
     let alive = true;
@@ -87,6 +78,12 @@ export function ChatConversationScreen() {
     return off;
   }, [userId]);
 
+  useEffect(() => {
+    if (!userId) return;
+    const off = observeChatDoc(userId, setChatDoc);
+    return off;
+  }, [userId]);
+
   // Suppress chat notifications for the conversation the user is actively
   // reading — matches Android's activeChatPartnerUid.
   useEffect(() => {
@@ -94,6 +91,14 @@ export function ChatConversationScreen() {
     setActiveChatPartnerUid(userId);
     return () => setActiveChatPartnerUid(null);
   }, [userId]);
+
+  // Mark read whenever the conversation is open and messages change —
+  // being on this screen at all means you've seen the latest message.
+  useEffect(() => {
+    if (!userId) return;
+    const cid = [me, userId].sort().join('_');
+    markChatRead(cid);
+  }, [userId, me, messages.length]);
 
   // Auto-scroll to the newest message. Run after the DOM updates so the
   // list has already grown to its new height.
@@ -118,16 +123,24 @@ export function ChatConversationScreen() {
     );
   }
 
+  const chatId = me ? [me, userId].sort().join('_') : null;
+  const otherLastReadMs = chatDoc?.lastRead?.[userId]?.toMillis?.() ?? 0;
+  const lastMineMs = [...messages].reverse().find((m) => m.senderId === me)?.timestamp?.toMillis?.() ?? 0;
+  const seenLastMine = lastMineMs > 0 && otherLastReadMs >= lastMineMs;
+
   const handleSend = async () => {
     const text = draft.trim();
     if (!text) return;
     setError(null);
     setDraft('');
+    const pendingReply = replyTo;
+    setReplyTo(null);
     try {
-      await sendText(userId, text);
+      await sendText(userId, text, pendingReply);
     } catch (e) {
       setError(e.message);
       setDraft(text);
+      setReplyTo(pendingReply);
     }
   };
 
@@ -161,9 +174,6 @@ export function ChatConversationScreen() {
     setEmojiAnchor(null);
   };
 
-  // Track latest draft for the keydown handler so closures don't go stale.
-  draftRef.current = draft;
-
   return (
     <Box
       sx={{
@@ -195,8 +205,26 @@ export function ChatConversationScreen() {
         }}
       >
         <Stack spacing={1}>
-          {messages.map((m) => (
-            <MessageBubble key={m.id} msg={m} fromMe={m.senderId === me} />
+          {messages.map((m, idx) => (
+            <MessageBubble
+              key={m.id}
+              msg={m}
+              fromMe={m.senderId === me}
+              myUid={me}
+              seen={m.senderId === me && idx === messages.length - 1 && seenLastMine}
+              onReact={(emoji) => {
+                if (!chatId) return;
+                const mine = m.reactions?.[me];
+                toggleReaction(chatId, m.id, emoji, mine);
+              }}
+              onReply={() =>
+                setReplyTo({
+                  messageId: m.id,
+                  senderId: m.senderId,
+                  text: m.text || (m.type === MSG_IMAGE ? '📷 Photo' : m.type === MSG_GIF ? '🎞️ GIF' : 'Message'),
+                })
+              }
+            />
           ))}
         </Stack>
       </Box>
@@ -215,6 +243,8 @@ export function ChatConversationScreen() {
           </Typography>
         </Stack>
       )}
+
+      <ReplyComposerStrip replyTo={replyTo} onCancel={() => setReplyTo(null)} />
 
       <InputBar
         draft={draft}
@@ -267,32 +297,7 @@ export function ChatConversationScreen() {
           },
         }}
       >
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(8, 1fr)',
-            gap: 0.5,
-          }}
-        >
-          {EMOJI_SET.map((emoji) => (
-            <Box
-              key={emoji}
-              onClick={() => pickEmoji(emoji)}
-              sx={{
-                aspectRatio: '1 / 1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 22,
-                borderRadius: 1,
-                cursor: 'pointer',
-                '&:hover': { backgroundColor: 'rgba(255,255,255,0.08)' },
-              }}
-            >
-              {emoji}
-            </Box>
-          ))}
-        </Box>
+        <EmojiGrid onPick={pickEmoji} />
       </Popover>
 
       <JitsiCallModal
@@ -424,156 +429,3 @@ function ConversationHeader({ user, onBack, onDelete, deleting, onAudioCall, onV
   );
 }
 
-function MessageBubble({ msg, fromMe }) {
-  const time = msg.timestamp?.toMillis ? formatMessageTime(msg.timestamp.toMillis()) : '';
-  return (
-    <Stack alignItems={fromMe ? 'flex-end' : 'flex-start'}>
-      {msg.type === MSG_IMAGE || msg.type === MSG_GIF ? (
-        <MediaBubble url={msg.mediaUrl} tag={msg.type === MSG_GIF ? 'GIF' : 'PHOTO'} fromMe={fromMe} />
-      ) : (
-        <TextBubble text={msg.text || ''} fromMe={fromMe} />
-      )}
-      <Typography variant="caption" color="text.secondary" sx={{ px: 0.75, pt: 0.25 }}>
-        {time}
-      </Typography>
-    </Stack>
-  );
-}
-
-function TextBubble({ text, fromMe }) {
-  return (
-    <Box
-      sx={{
-        maxWidth: { xs: 260, sm: 320, md: 420 },
-        px: 1.75,
-        py: 1.25,
-        borderRadius: fromMe ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-        backgroundColor: fromMe ? 'primary.main' : 'rgba(255,255,255,0.08)',
-        color: fromMe ? 'primary.contrastText' : 'text.primary',
-        wordBreak: 'break-word',
-        whiteSpace: 'pre-wrap',
-      }}
-    >
-      <Typography variant="body2">{text}</Typography>
-    </Box>
-  );
-}
-
-function MediaBubble({ url, tag, fromMe }) {
-  if (!url) return null;
-  return (
-    <Box
-      sx={{
-        position: 'relative',
-        maxWidth: { xs: 240, sm: 280, md: 360 },
-        borderRadius: fromMe ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-        overflow: 'hidden',
-        backgroundColor: 'rgba(255,255,255,0.05)',
-      }}
-    >
-      <Box
-        component="img"
-        src={url}
-        alt={tag}
-        sx={{ display: 'block', width: '100%', maxHeight: 360, objectFit: 'cover' }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 8,
-          left: 8,
-          px: 0.75,
-          py: 0.25,
-          borderRadius: 0.75,
-          backgroundColor: 'rgba(0,0,0,0.45)',
-          color: '#fff',
-        }}
-      >
-        <Typography variant="caption">{tag}</Typography>
-      </Box>
-    </Box>
-  );
-}
-
-function InputBar({ draft, onChange, onSend, onEmojiClick, onImageClick, onGifClick }) {
-  return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      spacing={0.5}
-      sx={{
-        px: 1,
-        py: 1,
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-        backgroundColor: 'rgba(14,11,20,0.6)',
-        backdropFilter: 'blur(12px)',
-      }}
-    >
-      <IconButton onClick={onEmojiClick} sx={{ color: 'text.secondary' }} aria-label="Emoji">
-        <EmojiEmotionsIcon />
-      </IconButton>
-      <IconButton onClick={onGifClick} sx={{ color: 'text.secondary' }} aria-label="GIF">
-        <GifIcon />
-      </IconButton>
-      <IconButton onClick={onImageClick} sx={{ color: 'text.secondary' }} aria-label="Image">
-        <ImageIcon />
-      </IconButton>
-      <TextField
-        value={draft}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Message"
-        size="small"
-        multiline
-        maxRows={4}
-        fullWidth
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            onSend();
-          }
-        }}
-        sx={{
-          '& .MuiOutlinedInput-root': {
-            borderRadius: '20px',
-            backgroundColor: 'rgba(255,255,255,0.06)',
-          },
-        }}
-      />
-      <IconButton
-        onClick={onSend}
-        sx={{
-          width: 44,
-          height: 44,
-          backgroundColor: 'primary.main',
-          color: 'primary.contrastText',
-          '&:hover': { backgroundColor: 'primary.dark' },
-        }}
-        aria-label="Send"
-      >
-        <SendIcon fontSize="small" />
-      </IconButton>
-    </Stack>
-  );
-}
-
-function LoadingShell({ title, onBack, message }) {
-  return (
-    <Box sx={{ maxWidth: 720, mx: 'auto', width: '100%', px: 2, py: 3 }}>
-      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2.5 }}>
-        <IconButton onClick={onBack} sx={{ color: 'text.primary', ml: -1 }} aria-label="Back">
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography variant="h4" sx={{ fontWeight: 700 }}>
-          {title}
-        </Typography>
-      </Stack>
-      <Stack alignItems="center" sx={{ py: 8 }}>
-        {message ? (
-          <Typography color="text.secondary">{message}</Typography>
-        ) : (
-          <CircularProgress />
-        )}
-      </Stack>
-    </Box>
-  );
-}

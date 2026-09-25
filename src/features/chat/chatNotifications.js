@@ -13,18 +13,24 @@ import { auth, firestore, firebaseReady } from '../../data/firebase.js';
 // listen to the user's chats + messages and post a browser Notification
 // for new messages from other users. Doesn't survive tab close; full FCM
 // web push would layer on top of this without changing the listener wiring.
+//
+// Generalized for group chats: every identity/suppression/dedup concept
+// that used to be "the other participant's uid" is now a chatId-keyed
+// `notificationKey` (== the partner uid for a 1:1 chat, == the chatId for
+// a group) — a 1:1 chat's key happens to equal its partner uid, so
+// behavior there is unchanged; only group chats exercise the new path.
 
 const STORAGE_KEY = 'yolo_notifications_enabled';
 
 let chatsUnsub = null;
 const messageUnsubs = new Map(); // chatId -> unsubscribe
 const displayNameCache = new Map();
-let activePartnerUid = null;
+let activeChatKey = null;
 let processStartMs = 0;
 const listenerAttachTime = new Map();
 
-export function setActiveChatPartnerUid(uid) {
-  activePartnerUid = uid || null;
+export function setActiveChatPartnerUid(key) {
+  activeChatKey = key || null;
 }
 
 export function isNotificationsSupported() {
@@ -73,10 +79,14 @@ export function startChatNotifications() {
       snap.docs.forEach((d) => {
         seenChatIds.add(d.id);
         if (messageUnsubs.has(d.id)) return;
-        const participants = d.data().participants || [];
-        const partnerUid = participants.find((p) => p !== me);
-        if (!partnerUid) return;
-        attachMessagesListener(d.id, partnerUid, me);
+        const data = d.data();
+        if (data.isGroup) {
+          attachMessagesListener(d.id, me, { isGroup: true, groupName: data.groupName || 'Group' });
+        } else {
+          const partnerUid = (data.participants || []).find((p) => p !== me);
+          if (!partnerUid) return;
+          attachMessagesListener(d.id, me, { isGroup: false, partnerUid });
+        }
       });
       // Drop listeners for chats we're no longer a part of.
       Array.from(messageUnsubs.keys()).forEach((id) => {
@@ -97,10 +107,11 @@ export function stopChatNotifications() {
   messageUnsubs.forEach((u) => u());
   messageUnsubs.clear();
   listenerAttachTime.clear();
-  activePartnerUid = null;
+  activeChatKey = null;
 }
 
-function attachMessagesListener(chatId, partnerUid, me) {
+function attachMessagesListener(chatId, me, meta) {
+  const notificationKey = meta.isGroup ? chatId : meta.partnerUid;
   const attachedAtMs = Date.now();
   listenerAttachTime.set(chatId, attachedAtMs);
   const q = query(
@@ -115,12 +126,14 @@ function attachMessagesListener(chatId, partnerUid, me) {
         const data = change.doc.data();
         const ts = data.timestamp?.toMillis?.() ?? 0;
         // Skip backfill — only notify on messages newer than the listener
-        // and the page load.
+        // and the page load. System messages (group join/leave/rename
+        // announcements) never trigger a notification.
         if (ts <= attachedAtMs || ts <= processStartMs) return;
         if (data.senderId === me) return;
+        if (data.type === 'system') return;
         // Suppress when the user is already viewing this chat.
-        if (activePartnerUid === partnerUid) return;
-        postFor(partnerUid, data);
+        if (activeChatKey === notificationKey) return;
+        postFor(chatId, notificationKey, meta, data);
       });
     },
     () => {}
@@ -129,6 +142,7 @@ function attachMessagesListener(chatId, partnerUid, me) {
 }
 
 async function resolveDisplayName(uid) {
+  if (!uid) return 'Someone';
   if (displayNameCache.has(uid)) return displayNameCache.get(uid);
   let name = 'Someone';
   try {
@@ -148,20 +162,30 @@ function previewFor(msg) {
   return msg.text || msg.mediaLabel || 'New message';
 }
 
-async function postFor(partnerUid, msg) {
+async function postFor(chatId, notificationKey, meta, msg) {
   if (!isNotificationsSupported() || Notification.permission !== 'granted') return;
-  const senderName = await resolveDisplayName(partnerUid);
+  const preview = previewFor(msg);
+  let title;
+  let body;
+  if (meta.isGroup) {
+    const senderName = await resolveDisplayName(msg.senderId);
+    title = meta.groupName;
+    body = `${senderName}: ${preview}`;
+  } else {
+    title = await resolveDisplayName(meta.partnerUid);
+    body = preview;
+  }
   try {
-    const n = new Notification(senderName, {
-      body: previewFor(msg),
-      tag: `chat:${partnerUid}`, // replaces older notifications from same person
+    const n = new Notification(title, {
+      body,
+      tag: `chat:${notificationKey}`, // replaces older notifications from the same conversation
       icon: '/icon-192.png',
     });
     n.onclick = () => {
       window.focus();
       window.location.hash = '';
-      // Use the SPA router by pushing to the chat path.
-      window.history.pushState({}, '', `/chat/${encodeURIComponent(partnerUid)}`);
+      const path = meta.isGroup ? `/group/${encodeURIComponent(chatId)}` : `/chat/${encodeURIComponent(notificationKey)}`;
+      window.history.pushState({}, '', path);
       window.dispatchEvent(new PopStateEvent('popstate'));
       n.close();
     };

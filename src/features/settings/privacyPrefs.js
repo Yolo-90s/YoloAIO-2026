@@ -51,6 +51,14 @@ function write(key, value) {
   window.dispatchEvent(new CustomEvent(EVENT));
 }
 
+// Plain (non-hook) reader for use outside components — chatInteractions.js
+// gates markChatRead() on this before ever writing the caller's own
+// lastRead key.
+export function readReceiptsEnabled() {
+  if (typeof window === 'undefined') return DEFAULTS.readReceipts;
+  return readBool(KEYS.readReceipts, DEFAULTS.readReceipts);
+}
+
 export function usePrivacyPrefs() {
   const [state, setState] = useState(snapshot);
 

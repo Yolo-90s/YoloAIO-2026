@@ -28,6 +28,9 @@ import { auth, firestore, storage } from '../../data/firebase.js';
 export const MSG_TEXT = 'text';
 export const MSG_IMAGE = 'image';
 export const MSG_GIF = 'gif';
+// Group-lifecycle announcement ("X joined the group", etc) — rendered as
+// a centered caption, not a bubble; see groupRepository.js.
+export const MSG_SYSTEM = 'system';
 
 export function chatIdFor(uidA, uidB) {
   return [uidA, uidB].sort().join('_');
@@ -39,7 +42,9 @@ function currentUid() {
 
 // ── Listeners ──────────────────────────────────────────────────────────────
 
-function observeOtherUsers(onChange) {
+// Exported — groupRepository's CreateGroupDialog/AddMembers member picker
+// reuses this same "full directory" listener as its search source.
+export function observeOtherUsers(onChange) {
   const me = currentUid();
   return onSnapshot(
     collection(firestore, 'users'),
@@ -140,6 +145,22 @@ export function observeMessages(otherUid, onChange) {
   );
 }
 
+// The raw chat doc (participants/lastMessage/lastRead) — used for
+// read-receipt ticks.
+export function observeChatDoc(otherUid, onChange) {
+  const me = currentUid();
+  if (!me) {
+    onChange(null);
+    return () => {};
+  }
+  const cid = chatIdFor(me, otherUid);
+  return onSnapshot(
+    doc(firestore, 'chats', cid),
+    (snap) => onChange(snap.exists() ? snap.data() : null),
+    () => onChange(null)
+  );
+}
+
 export async function fetchUser(uid) {
   try {
     const snap = await getDoc(doc(firestore, 'users', uid));
@@ -151,7 +172,10 @@ export async function fetchUser(uid) {
 
 // ── Mutations ──────────────────────────────────────────────────────────────
 
-export async function sendText(otherUid, text) {
+// `replyTo`, when present, is `{ messageId, senderId, text }` — see
+// chatInteractions.js's ReplyPreview shape. Denormalized onto the new
+// message doc so rendering a reply never needs an extra read.
+export async function sendText(otherUid, text, replyTo = null) {
   const me = currentUid();
   if (!me) throw new Error('Not signed in');
   const trimmed = text.trim();
@@ -174,6 +198,9 @@ export async function sendText(otherUid, text) {
     senderId: me,
     type: MSG_TEXT,
     text: trimmed,
+    replyToId: replyTo?.messageId ?? null,
+    replyToSenderId: replyTo?.senderId ?? null,
+    replyToText: replyTo?.text ?? null,
     timestamp: serverTimestamp(),
   });
 }
