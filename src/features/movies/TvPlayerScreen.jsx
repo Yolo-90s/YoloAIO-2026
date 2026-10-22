@@ -32,9 +32,13 @@ export function TvPlayerScreen() {
         sx={{
           position: 'relative',
           aspectRatio: '16 / 9',
-          borderRadius: '16px',
+          borderRadius: { xs: 0, sm: '16px' },
           overflow: 'hidden',
           backgroundColor: '#000',
+          // FeatureScaffold's content box has side padding (px: 2 = 16px on
+          // mobile) — cancel it out here so the player goes edge-to-edge on
+          // phones instead of sitting in a shrunken, visibly inset box.
+          mx: { xs: -2, sm: 0 },
         }}
       >
         <Box
