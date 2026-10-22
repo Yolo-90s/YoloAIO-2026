@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { Box, CircularProgress, Stack } from '@mui/material';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
-import { tvEmbedUrl } from './vidkingPlayer.js';
+import { tvEmbedUrl } from './movieEmbedPlayer.js';
 import { useWatchProgress } from './useWatchProgress.js';
 import { PlayerCastButton } from './PlayerCastButton.jsx';
 

@@ -21,8 +21,9 @@ import {
 /**
  * Cast button rendered on top of the Movie/TV player iframe.
  *
- * Honest UX note: the player is a VidKing iframe, and we don't have
- * the underlying video URL — the Cast Web SDK needs a direct stream
+ * Honest UX note: the player is an embed-provider iframe (see
+ * movieEmbedPlayer.js), and we don't have the underlying video URL —
+ * the Cast Web SDK needs a direct stream
  * URL to `loadMedia()`. That means we can't *programmatically* cast
  * the video. But Chrome's browser-level **tab cast** mirrors the
  * entire tab (including the iframe and its audio) to a Chromecast

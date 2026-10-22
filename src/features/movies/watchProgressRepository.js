@@ -44,8 +44,14 @@ export async function getWatchProgress(tmdbId) {
   }
 }
 
-// Parses vidking's iframe postMessage payload. Returns null for messages
-// from other origins or with shapes we don't recognise.
+// Parses the embed player's iframe postMessage payload. Returns null for
+// messages from other origins or with shapes we don't recognise.
+//
+// vidlink.pro's PLAYER_EVENT shape matches vidking's for the fields this
+// app actually reads (event/currentTime/duration) — the one difference is
+// the id field name (vidking: `id`, vidlink: `mtmdbId`), handled below.
+// Not that it matters much: useWatchProgress saves against the tmdbId it
+// already knows from the route, not this parsed field.
 export function parsePlayerEvent(raw) {
   let obj = null;
   try {
@@ -60,7 +66,7 @@ export function parsePlayerEvent(raw) {
     currentTime: Number(data.currentTime) || 0,
     duration: Number(data.duration) || 0,
     progress: Number(data.progress) || 0,
-    tmdbId: String(data.id ?? ''),
+    tmdbId: String(data.id ?? data.mtmdbId ?? ''),
     mediaType: data.mediaType || 'movie',
   };
 }

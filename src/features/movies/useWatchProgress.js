@@ -5,13 +5,14 @@ import {
   saveWatchPosition,
 } from './watchProgressRepository.js';
 
-// Drives watch-progress for a vidking iframe player. Fetches the last
-// saved position once on mount (so the caller can pass `progressSeconds`
-// to the embed URL), then listens for the iframe's postMessage events and
-// throttle-saves them back to Firestore.
+// Drives watch-progress for the embed iframe player (currently vidlink.pro,
+// see movieEmbedPlayer.js). Fetches the last saved position once on mount
+// (so the caller can pass `progressSeconds` to the embed URL), then
+// listens for the iframe's postMessage events and throttle-saves them
+// back to Firestore.
 //
-// Vidking posts events with shape:
-//   { type: 'PLAYER_EVENT', data: { event, currentTime, duration, progress, id, mediaType } }
+// The embed player posts events with shape:
+//   { type: 'PLAYER_EVENT', data: { event, currentTime, duration, progress, mediaType, ... } }
 // We only persist timeupdate/pause/ended/seeked/play.
 
 const PERSIST_EVENTS = new Set(['timeupdate', 'pause', 'ended', 'seeked', 'play']);
