@@ -8,6 +8,13 @@
 
 const BASE = 'https://vidlink.pro';
 
+// Used only when vidlink.pro's page loads fine but the video never actually
+// starts — a per-title gap in its scraped source pool (confirmed: other
+// titles play fine on vidlink.pro the same day), not a dead provider. No
+// query params here — vidsrc.to's aren't independently documented, and
+// guessing at unsupported ones risks breaking the URL outright.
+const FALLBACK_BASE = 'https://vidsrc.to/embed';
+
 export function movieEmbedUrl({ tmdbId, primaryColorHex = 'B85AC1', autoPlay = true, progressSeconds = null }) {
   const params = [`primaryColor=${primaryColorHex}`, `autoplay=${autoPlay}`, 'title=false'];
   if (progressSeconds && progressSeconds > 0) params.push(`startAt=${progressSeconds}`);
@@ -30,4 +37,12 @@ export function tvEmbedUrl({
   if (nextEpisode) params.push('nextbutton=true');
   if (progressSeconds && progressSeconds > 0) params.push(`startAt=${progressSeconds}`);
   return `${BASE}/tv/${tmdbId}/${season}/${episode}?${params.join('&')}`;
+}
+
+export function fallbackMovieEmbedUrl({ tmdbId }) {
+  return `${FALLBACK_BASE}/movie/${tmdbId}`;
+}
+
+export function fallbackTvEmbedUrl({ tmdbId, season, episode }) {
+  return `${FALLBACK_BASE}/tv/${tmdbId}/${season}/${episode}`;
 }
