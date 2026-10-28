@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
 import { FeatureScaffold } from '../../ui/FeatureScaffold.jsx';
-import { movieEmbedUrl, fallbackMovieEmbedUrl } from './movieEmbedPlayer.js';
+import { movieEmbedUrl } from './movieEmbedPlayer.js';
 import { useWatchProgress } from './useWatchProgress.js';
 import { parsePlayerEvent } from './watchProgressRepository.js';
 import { PlayerCastButton } from './PlayerCastButton.jsx';
@@ -16,15 +16,13 @@ export function MoviePlayerScreen() {
   const { movieId } = useParams();
   const { initialSeconds } = useWatchProgress({ tmdbId: movieId, mediaType: 'movie' });
 
-  const [usingFallback, setUsingFallback] = useState(false);
   const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'stalled'
   const [retryNonce, setRetryNonce] = useState(0);
-  const hasPlaybackStartedRef = useRef(false);
+  const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
 
   useEffect(() => {
-    setUsingFallback(false);
     setLoadState('loading');
-    hasPlaybackStartedRef.current = false;
+    setHasPlaybackStarted(false);
   }, [movieId]);
 
   // The embed player posts PLAYER_EVENT messages regardless of which
@@ -34,7 +32,7 @@ export function MoviePlayerScreen() {
     function handler(e) {
       const ev = parsePlayerEvent(e.data);
       if (ev && (ev.name === 'play' || ev.name === 'timeupdate')) {
-        hasPlaybackStartedRef.current = true;
+        setHasPlaybackStarted(true);
       }
     }
     window.addEventListener('message', handler);
@@ -44,10 +42,13 @@ export function MoviePlayerScreen() {
   useEffect(() => {
     if (loadState !== 'ready') return;
     const timer = setTimeout(() => {
-      if (!hasPlaybackStartedRef.current) setLoadState('stalled');
+      setHasPlaybackStarted((started) => {
+        if (!started) setLoadState('stalled');
+        return started;
+      });
     }, STALL_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [loadState, usingFallback, retryNonce]);
+  }, [loadState, retryNonce]);
 
   // Wait for the saved position before mounting the iframe so the embed
   // player picks up the `startAt` query param and resumes from there.
@@ -61,18 +62,12 @@ export function MoviePlayerScreen() {
     );
   }
 
-  const src = usingFallback
-    ? fallbackMovieEmbedUrl({ tmdbId: movieId })
-    : movieEmbedUrl({ tmdbId: movieId, progressSeconds: initialSeconds || null });
+  const src = movieEmbedUrl({ tmdbId: movieId, progressSeconds: initialSeconds || null });
 
-  function handleTryAnotherSource() {
-    hasPlaybackStartedRef.current = false;
+  function handleRetry() {
+    setHasPlaybackStarted(false);
     setLoadState('loading');
-    if (usingFallback) {
-      setRetryNonce((n) => n + 1);
-    } else {
-      setUsingFallback(true);
-    }
+    setRetryNonce((n) => n + 1);
   }
 
   return (
@@ -91,15 +86,24 @@ export function MoviePlayerScreen() {
         }}
       >
         <Box
-          key={`${src}-${retryNonce}`}
+          key={retryNonce}
           component="iframe"
           src={src}
           onLoad={() => setLoadState('ready')}
           allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
           allowFullScreen
+          // Blocks the popup/popunder ads these free embeds commonly bundle
+          // (no allow-popups) and top-level navigation hijacks (no
+          // allow-top-navigation) — same category of fix as the Android
+          // WebView's shouldOverrideUrlLoading host-lock, just via the
+          // standard iframe sandbox mechanism instead. allow-same-origin is
+          // safe here since the embed is always a genuinely different
+          // origin from this app, not same-origin content that could use it
+          // to escape the sandbox.
+          sandbox="allow-scripts allow-same-origin allow-forms allow-fullscreen"
           sx={{ width: '100%', height: '100%', border: 0, display: 'block' }}
         />
-        {loadState === 'loading' && (
+        {(loadState === 'loading' || (loadState === 'ready' && !hasPlaybackStarted)) && (
           <Box
             sx={{
               position: 'absolute',
@@ -121,13 +125,13 @@ export function MoviePlayerScreen() {
             sx={{ position: 'absolute', inset: 0, backgroundColor: '#000', px: 3, textAlign: 'center' }}
           >
             <Typography variant="subtitle1" sx={{ color: '#fff' }}>
-              This title isn't playing on this source
+              This title isn't available right now
             </Typography>
             <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-              {usingFallback ? 'Still not available right now — try again later.' : "Let's try another source."}
+              It may just be a temporary gap in this source — try again, or come back later.
             </Typography>
-            <Button variant="contained" onClick={handleTryAnotherSource}>
-              {usingFallback ? 'Retry' : 'Try another source'}
+            <Button variant="contained" onClick={handleRetry}>
+              Retry
             </Button>
           </Stack>
         )}
